@@ -2,9 +2,10 @@
 
 Página estática que lee un glucómetro **Prodigy AutoCode** por cable USB usando
 Web Serial (Chrome / Edge de escritorio). Conecta, mantiene el medidor encendido,
-descarga las mediciones, las exporta a CSV o JSON y genera el **reporte PDF**
-de Mediciones (misma plantilla que el workflow de n8n, copiada en `reporte.js`;
-el workflow de producción no se toca ni se llama). Todo pasa en el navegador:
+descarga las mediciones, las exporta a CSV o JSON y genera un **reporte PDF por día**
+(`reporte.js`: mismo diseño que el reporte del bot de Mediciones en n8n, pero con
+promedio y mín–máx de cada día, porque el glucómetro no guarda si fue antes o
+después de comer; el workflow de producción no se toca ni se llama). Todo pasa en el navegador:
 la página no manda datos a ningún servidor.
 
 Publicada en https://sechavarria-star.github.io/prodigy-lector-pages/

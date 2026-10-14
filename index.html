@@ -124,7 +124,7 @@ select.fc{font-family:'Montserrat',sans-serif;width:auto;padding:4px 8px}
       <button id="bPdf" class="btn bp" disabled>Generar PDF</button>
       <span id="infoPdf" class="kpi-sub"></span>
     </div>
-    <p class="kpi-sub" style="margin-top:8px">Mismo reporte que manda el bot de Mediciones. El glucómetro no guarda si fue antes o después de comer: elegilo en la columna <b>Momento</b>; las que queden sin especificar van a la tabla pero no al gráfico. En el diálogo elegí <b>Guardar como PDF</b>. Se genera en este navegador: no se manda nada a ningún servidor.</p>
+    <p class="kpi-sub" style="margin-top:8px">Reporte por día: promedio, mínimo y máximo de cada día, con el detalle de cada medición. En el diálogo elegí <b>Guardar como PDF</b>. Se genera en este navegador: no se manda nada a ningún servidor.</p>
   </div>
 
   <div class="card">
@@ -137,8 +137,8 @@ select.fc{font-family:'Montserrat',sans-serif;width:auto;padding:4px 8px}
     </div>
     <div class="tbl-wrap">
       <table class="tbl">
-        <thead><tr><th class="num">#</th><th>Fecha</th><th>Hora</th><th class="num">Valor</th><th>Unidad</th><th>Estado</th><th>Momento</th></tr></thead>
-        <tbody id="tbody"><tr><td colspan="7" class="vacio">Todavía no se descargó nada.</td></tr></tbody>
+        <thead><tr><th class="num">#</th><th>Fecha</th><th>Hora</th><th class="num">Valor</th><th>Unidad</th><th>Estado</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="6" class="vacio">Todavía no se descargó nada.</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -342,7 +342,7 @@ function ui(conectado) {
 function pintar() {
   const tb = $('tbody');
   tb.replaceChildren();
-  if (!mediciones.length) { tb.innerHTML = '<tr><td colspan="7" class="vacio">El medidor no tiene mediciones.</td></tr>'; }
+  if (!mediciones.length) { tb.innerHTML = '<tr><td colspan="6" class="vacio">El medidor no tiene mediciones.</td></tr>'; }
   for (const m of mediciones) {
     const tr = document.createElement('tr');
     const badge = m.fuera_de_rango ? `<span class="bx xr">${m.fuera_de_rango === 'alto' ? 'HI · >600' : 'LO · <20'}</span>`
@@ -350,8 +350,7 @@ function pintar() {
       : m.unidad === 'mg/dL' && m.valor > 180 ? '<span class="bx xw">alta</span>'
       : '<span class="bx xg">en rango</span>';
     tr.innerHTML = `<td class="num">${m.indice}</td><td class="mono">${m.fecha}</td><td class="mono">${m.hora}</td>
-      <td class="num">${m.valor ?? '—'}</td><td>${m.unidad}</td><td>${badge}</td><td></td>`;
-    tr.lastElementChild.appendChild(selectMomento(m));
+      <td class="num">${m.valor ?? '—'}</td><td>${m.unidad}</td><td>${badge}</td>`;
     tb.appendChild(tr);
   }
   const vals = mediciones.filter(m => m.valor != null).map(m => m.valor);
@@ -379,19 +378,6 @@ async function copiarJson() {
 }
 
 // ── reporte PDF ──────────────────────────────────────
-const MOMENTOS = [['', 'Sin especificar'], ['antes_desayuno', 'Antes del desayuno'], ['despues_desayuno', 'Después del desayuno'],
-  ['antes_almuerzo', 'Antes del almuerzo'], ['despues_almuerzo', 'Después del almuerzo'], ['antes_cena', 'Antes de la cena'],
-  ['despues_cena', 'Después de la cena'], ['nocturno', 'Nocturna'], ['otro', 'Otro']];
-
-function selectMomento(m) {
-  const sel = document.createElement('select');
-  sel.className = 'fc';
-  sel.setAttribute('aria-label', `Momento de la medición ${m.indice}`);
-  for (const [v, t] of MOMENTOS) sel.add(new Option(t, v, false, (m.momento || '') === v));
-  sel.onchange = () => { m.momento = sel.value || null; };
-  return sel;
-}
-
 function delPeriodo() {
   const dias = +$('selPeriodo').value;
   if (!dias) return { filas: mediciones, desde: null };
@@ -413,7 +399,6 @@ function generarPdf() {
   const rows = filas.map(m => ({
     fecha_medicion: m.fecha, hora_medicion: m.hora,
     valor: m.valor ?? (m.fuera_de_rango === 'alto' ? 'HI' : 'LO'),
-    momento: m.momento || null, nota: '',
   }));
   const fechas = filas.map(m => m.fecha).sort();
   const aFecha = f => { const [a, me, d] = f.split('-'); return new Date(+a, me - 1, +d); };
@@ -439,7 +424,8 @@ function generarPdf() {
 // ?demo carga mediciones ficticias para probar la página sin medidor
 if (new URLSearchParams(location.search).has('demo')) {
   const hoy = new Date(), p = n => String(n).padStart(2, '0');
-  const demo = [[1, 8, 112], [1, 13, 165], [3, 8, 98], [3, 21, 140], [6, 9, 125], [6, 14, 182], [9, 8, 64], [12, 8, 104], [12, 20, 'Hi.'], [20, 9, 131]];
+  const demo = [[1, 8, 112], [1, 13, 165], [1, 21, 138], [3, 8, 98], [3, 21, 140], [4, 9, 118], [6, 9, 125], [6, 14, 182],
+    [9, 8, 64], [9, 12, 92], [12, 8, 104], [12, 20, 'Hi.'], [15, 9, 121], [15, 20, 150], [20, 9, 131]];
   mediciones = demo.map(([dias, h, v], i) => {
     const d = new Date(hoy - dias * 864e5);
     const fuera = { 'Hi.': 'alto', 'Lo.': 'bajo' }[v] || null;
