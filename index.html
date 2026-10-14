@@ -177,10 +177,19 @@ function log(tipo, txt) {
 function estado(txt, cls) { const e = $('estado'); e.textContent = txt; e.className = 'bx ' + cls; }
 
 // ── serie ────────────────────────────────────────────
-async function conectar() {
+// Puerto ya autorizado en este navegador: se usa sin mostrar el selector de Chrome.
+async function puertoAutorizado() {
+  const ps = await navigator.serial.getPorts();
+  return ps.find(p => { const i = p.getInfo(); return i.usbVendorId === 0x067B && i.usbProductId === 0x2303; }) || ps[0] || null;
+}
+
+async function conectar(automatico = false) {
+  if (port) return;
   try {
-    try { port = await navigator.serial.requestPort({ filters: FILTROS }); }
-    catch (e) { if (e.name === 'NotFoundError') port = await navigator.serial.requestPort(); else throw e; }
+    port = await puertoAutorizado();
+    if (port) log('in', 'medidor ya autorizado: conectando sin preguntar');
+    else if (automatico) return;
+    else port = await navigator.serial.requestPort({ filters: FILTROS });
     await port.open({ baudRate: BAUD, dataBits: 8, parity: 'none', stopBits: 1 });
     writer = port.writable.getWriter();
     leerSiempre();
@@ -443,9 +452,12 @@ if (new URLSearchParams(location.search).has('demo')) {
 }
 
 if (!('serial' in navigator)) { $('sinSoporte').hidden = false; $('bConectar').disabled = true; }
+// Al abrir la página o enchufar el cable, conecta solo si el puerto ya estaba autorizado.
+navigator.serial?.addEventListener('connect', () => conectar(true));
+if ('serial' in navigator && !new URLSearchParams(location.search).has('demo')) conectar(true);
 navigator.serial?.addEventListener('disconnect', e => { if (e.target === port) { log('er', 'el cable se desconectó'); desconectar(); } });
 
-$('bConectar').onclick = conectar;
+$('bConectar').onclick = () => conectar();
 $('bDesconectar').onclick = desconectar;
 $('bSerie').onclick = leerSerie;
 $('bDescargar').onclick = descargar;
