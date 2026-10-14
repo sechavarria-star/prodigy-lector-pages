@@ -169,6 +169,10 @@ async function conectar() {
     await leerSerie();
   } catch (e) {
     if (e.name === 'NotFoundError') { log('er', 'No se eligió ningún puerto. Si no aparece el selector, abrí la página en Chrome.'); estado('Sin puerto', 'xw'); }
+    else if (e.name === 'NetworkError' || e.name === 'InvalidStateError') {
+      log('er', 'El puerto ya está abierto en otra pestaña u otro programa. Cerralo (o tocá Desconectar ahí) y reintentá.');
+      estado('Puerto ocupado', 'xw');
+    }
     else { log('er', e.message); estado('Error al conectar', 'xr'); }
     port = null;
   }
