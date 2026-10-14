@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lector AutoCode</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens y componentes copiados de crm-giwa/_Estilos.html (fuente de verdad del DS). */
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+:root{
+  color-scheme:dark;
+  --bg:#060716;--bg2:#0d1130;--card:#0f1535;
+  --b:#1e2a55;--blue:#0090FF;--b2:#0070cc;--violet:#A855F7;
+  --tx:#e8eaf6;--mt:#8892b0;--mt2:#5a6488;--ok:#00c97a;--wa:#f5a623;--rd:#ff4d6d;--teal:#14b8a6;--yl:#e8c547;
+  --r:10px;--mono:'Courier New',monospace;
+  --b-suave:rgba(30,42,85,.4);
+  --blue-a:rgba(0,144,255,.12);--teal-a:rgba(20,184,166,.13);--ok-a:rgba(0,201,122,.13);
+  --wa-a:rgba(245,166,35,.13);--rd-a:rgba(255,77,109,.13);--mt-a:rgba(136,146,176,.12);
+}
+body{font-family:'Montserrat',sans-serif;font-weight:300;background:var(--bg);color:var(--tx);min-height:100vh;font-size:14px;line-height:1.5}
+h1,b,strong{font-weight:700}
+.wrap{max-width:1000px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:18px}
+h1 small{display:block;font-size:11px;font-weight:300;color:var(--mt)}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border-radius:var(--r);border:none;cursor:pointer;font-family:'Montserrat',sans-serif;font-size:12px;font-weight:600;transition:.15s;white-space:nowrap}
+.bp{background:var(--b2);color:#fff}.bp:hover{background:var(--blue)}
+.bg{background:transparent;color:var(--mt);border:1px solid var(--b)}.bg:hover{color:var(--tx);border-color:var(--blue)}
+.bok{background:var(--ok-a);color:var(--ok);border:1px solid var(--ok-a)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.bx{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700}
+.xb{background:var(--blue-a);color:var(--blue)}.xt{background:var(--teal-a);color:var(--teal)}
+.xg{background:var(--ok-a);color:var(--ok)}.xw{background:var(--wa-a);color:var(--wa)}
+.xr{background:var(--rd-a);color:var(--rd)}.xm{background:var(--mt-a);color:var(--mt)}
+.card{background:var(--card);border:1px solid var(--b);border-radius:var(--r);padding:14px 16px;margin-bottom:12px}
+.sec{font-size:9.5px;font-weight:700;color:var(--mt);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+.acciones{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.kpi{--accent:var(--blue);background:var(--card);border:1px solid var(--b);border-radius:var(--r);padding:14px 16px;border-top:3px solid var(--accent)}
+.kpi-lbl{font-size:9px;color:var(--mt);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.kpi-val{font-size:18px;font-weight:700;font-family:var(--mono);color:var(--accent)}
+.kpi-sub{font-size:10px;color:var(--mt);margin-top:3px}
+.tbl-wrap{overflow-x:auto;max-height:420px;overflow-y:auto}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{position:sticky;top:0;background:var(--card);padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--mt);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--b)}
+.tbl td{padding:8px 10px;border-bottom:1px solid var(--b-suave);font-size:12px}
+.tbl td.num,.tbl th.num{text-align:right;font-family:var(--mono)}
+.tbl td.mono{font-family:var(--mono)}
+.fc{background:var(--bg2);border:1px solid var(--b);border-radius:var(--r);color:var(--tx);padding:6px 10px;font-family:var(--mono);font-size:12px;width:90px}
+.fc:focus{outline:none;border-color:var(--blue)}
+.sw{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mt);cursor:pointer}
+.log{font-family:var(--mono);font-size:11px;background:var(--bg2);border:1px solid var(--b);border-radius:var(--r);padding:10px;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-all;color:var(--mt)}
+.log .tx{color:var(--blue)}.log .rx{color:var(--ok)}.log .er{color:var(--rd)}.log .in{color:var(--mt2)}
+.aviso{border-left:3px solid var(--wa);background:var(--wa-a);color:var(--tx);padding:10px 12px;border-radius:var(--r);font-size:12px;margin-bottom:12px}
+.vacio{color:var(--mt);font-size:12px;padding:14px 0}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:700px){.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Lector Prodigy AutoCode<small>Lectura por cable USB · Web Serial</small></h1>
+    <span id="estado" class="bx xm">Desconectado</span>
+  </header>
+
+  <div id="sinSoporte" class="aviso" hidden>
+    Este navegador no soporta Web Serial. Abrí la página en <b>Chrome</b> o <b>Edge</b> de escritorio.
+  </div>
+
+  <div class="card">
+    <div class="sec">Conexión</div>
+    <div class="acciones">
+      <button id="bConectar" class="btn bp">Conectar medidor</button>
+      <button id="bDesconectar" class="btn bg" disabled>Desconectar</button>
+      <label class="sw"><input type="checkbox" id="chkMantener" disabled> Mantener encendido (ping cada 10 s)</label>
+      <span id="ping" class="bx xm" hidden></span>
+    </div>
+  </div>
+
+  <div class="g2">
+    <div class="card">
+      <div class="sec">Comandos</div>
+      <div class="acciones">
+        <button id="bSerie" class="btn bg" disabled>Leer número de serie</button>
+        <button id="bDescargar" class="btn bp" disabled>Descargar mediciones</button>
+      </div>
+      <p class="kpi-sub" style="margin-top:8px">Después de descargar, el medidor cierra la sesión: hay que volver a prenderlo para otra lectura.</p>
+    </div>
+    <div class="card">
+      <div class="sec">Comando manual</div>
+      <div class="acciones">
+        <input id="inHex" class="fc" value="58" placeholder="hex" aria-label="Byte en hexadecimal">
+        <button id="bEnviar" class="btn bg" disabled>Enviar</button>
+      </div>
+      <p class="kpi-sub" style="margin-top:8px">Conocidos: <b>58</b> número de serie · <b>05</b> mediciones. Se pueden mandar varios bytes separados por espacio.</p>
+    </div>
+  </div>
+
+  <div class="kpi-grid" id="kpis" hidden>
+    <div class="kpi"><div class="kpi-lbl">Medidor</div><div class="kpi-val" id="kSerie">—</div><div class="kpi-sub">número de serie</div></div>
+    <div class="kpi" style="--accent:var(--teal)"><div class="kpi-lbl">Mediciones</div><div class="kpi-val" id="kCant">—</div><div class="kpi-sub" id="kRango">—</div></div>
+    <div class="kpi"><div class="kpi-lbl">Promedio</div><div class="kpi-val" id="kProm">—</div><div class="kpi-sub" id="kUnidad">mg/dL</div></div>
+    <div class="kpi" style="--accent:var(--violet)"><div class="kpi-lbl">Última</div><div class="kpi-val" id="kUlt">—</div><div class="kpi-sub" id="kUltF">—</div></div>
+  </div>
+
+  <div class="card">
+    <div class="acciones" style="justify-content:space-between;margin-bottom:8px">
+      <div class="sec" style="margin:0">Mediciones</div>
+      <div class="acciones">
+        <button id="bCsv" class="btn bg" disabled>Bajar CSV</button>
+        <button id="bJson" class="btn bg" disabled>Copiar JSON</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th class="num">#</th><th>Fecha</th><th>Hora</th><th class="num">Valor</th><th>Unidad</th><th>Estado</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="6" class="vacio">Todavía no se descargó nada.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="acciones" style="justify-content:space-between;margin-bottom:8px">
+      <div class="sec" style="margin:0">Log de bytes</div>
+      <button id="bLimpiar" class="btn bg">Limpiar</button>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script>
+// Protocolo (ver scripts/leer_autocode.py): UART 9600 8N1, comandos de 1 byte.
+//   0x58 -> [largo] "51850-3754452" 0x9E
+//   0x05 -> 0x01 "Glucose\r\n" STX índice,año,mes,día,hora,min,valor,unidad\r\n ... ETX EOT
+const BAUD = 9600, PING_MS = 10000, SILENCIO_MS = 1000, INTENTOS = 4;
+const STX = 0x02, ETX = 0x03, EOT = 0x04, READ_SERIAL = 0x58, READ_RECORDS = 0x05;
+const FIN_SERIE = [0x00, 0x9D, 0x9E];
+const FILTROS = [{ usbVendorId: 0x067B, usbProductId: 0x2303 }]; // Prolific PL2303
+
+const $ = id => document.getElementById(id);
+let port = null, reader = null, writer = null, rx = [], ocupado = Promise.resolve(), timerPing = null;
+let mediciones = [], serie = '';
+
+// ── log ──────────────────────────────────────────────
+const hex = b => Array.from(b, x => x.toString(16).padStart(2, '0')).join(' ');
+function log(tipo, txt) {
+  const el = $('log'), l = document.createElement('div');
+  l.className = tipo;
+  l.textContent = `${new Date().toLocaleTimeString('es-AR')}  ${{ tx: '→', rx: '←', er: '✕', in: '·' }[tipo]} ${txt}`;
+  el.appendChild(l); el.scrollTop = el.scrollHeight;
+}
+function estado(txt, cls) { const e = $('estado'); e.textContent = txt; e.className = 'bx ' + cls; }
+
+// ── serie ────────────────────────────────────────────
+async function conectar() {
+  try {
+    try { port = await navigator.serial.requestPort({ filters: FILTROS }); }
+    catch (e) { if (e.name === 'NotFoundError') port = await navigator.serial.requestPort(); else throw e; }
+    await port.open({ baudRate: BAUD, dataBits: 8, parity: 'none', stopBits: 1 });
+    writer = port.writable.getWriter();
+    leerSiempre();
+    log('in', `puerto abierto a ${BAUD} baudios`);
+    await espera(500); // el cable se alimenta de DTR/RTS
+    ui(true);
+    await leerSerie();
+  } catch (e) {
+    if (e.name === 'NotFoundError') { log('er', 'No se eligió ningún puerto. Si no aparece el selector, abrí la página en Chrome.'); estado('Sin puerto', 'xw'); }
+    else { log('er', e.message); estado('Error al conectar', 'xr'); }
+    port = null;
+  }
+}
+
+async function leerSiempre() {
+  reader = port.readable.getReader();
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) rx.push(...value);
+    }
+  } catch (e) { log('er', 'lectura: ' + e.message); }
+  finally { reader.releaseLock(); }
+}
+
+async function desconectar() {
+  pararPing();
+  try { await reader?.cancel(); } catch {}
+  try { writer?.releaseLock(); } catch {}
+  try { await port?.close(); } catch {}
+  port = reader = writer = null;
+  ui(false); log('in', 'puerto cerrado');
+}
+
+const espera = ms => new Promise(r => setTimeout(r, ms));
+
+function completo(buf, cmd) {
+  if (cmd === READ_RECORDS) return buf.length >= 2 && buf.at(-2) === ETX && buf.at(-1) === EOT;
+  if (cmd === READ_SERIAL) return buf.length > 1 && (FIN_SERIE.includes(buf.at(-1)) || buf.length >= buf[0]);
+  return false;
+}
+
+// Manda bytes y junta la respuesta hasta que esté completa o haya SILENCIO_MS sin datos.
+// Serializado: el ping no se pisa con una descarga.
+function comando(bytes, { intentos = INTENTOS, silencioso = false } = {}) {
+  const tarea = ocupado.then(async () => {
+    for (let i = 0; i < intentos; i++) {
+      rx = [];
+      await writer.write(new Uint8Array(bytes));
+      if (!silencioso) log('tx', hex(bytes));
+      let largo = 0, quieto = Date.now();
+      while (!completo(rx, bytes.length === 1 ? bytes[0] : null)) {
+        await espera(50);
+        if (rx.length !== largo) { largo = rx.length; quieto = Date.now(); }
+        else if (Date.now() - quieto > SILENCIO_MS) break;
+      }
+      if (rx.length) {
+        const r = rx.slice();
+        if (!silencioso) log('rx', `${r.length} bytes · ${hex(r.slice(0, 48))}${r.length > 48 ? ' …' : ''}`);
+        return r;
+      }
+      if (!silencioso) log('in', `sin respuesta (intento ${i + 1}/${intentos})`);
+      await espera(500);
+    }
+    throw new Error('El medidor no responde. Prendelo de nuevo y reintentá.');
+  });
+  ocupado = tarea.catch(() => {});
+  return tarea;
+}
+
+// ── comandos de alto nivel ───────────────────────────
+async function leerSerie() {
+  try {
+    const r = await comando([READ_SERIAL]);
+    let fin = r.findIndex((b, i) => i > 0 && FIN_SERIE.includes(b)); if (fin < 0) fin = r.length;
+    serie = String.fromCharCode(...r.slice(r[0] < 0x20 ? 1 : 0, fin)).trim();
+    $('kSerie').textContent = serie; $('kpis').hidden = false;
+    estado('Conectado · ' + serie, 'xg');
+  } catch (e) { log('er', e.message); estado('Sin respuesta', 'xw'); }
+}
+
+async function descargar() {
+  try {
+    estado('Descargando…', 'xt');
+    const r = await comando([READ_RECORDS]);
+    const ini = r.indexOf(STX), fin = r.indexOf(ETX);
+    if (ini < 0 || fin < 0) throw new Error('Respuesta sin STX/ETX: no la pude interpretar');
+    const texto = String.fromCharCode(...r.slice(ini + 1, fin));
+    mediciones = texto.split('\r\n').filter(Boolean).map(l => {
+      const [idx, a, m, d, h, mi, valor, u] = l.split(',');
+      const unidad = u === 'mg_dL' ? 'mg/dL' : 'mmol/L';
+      const fuera = { 'Hi.': 'alto', 'Lo.': 'bajo' }[valor] || null;
+      const p = n => String(n).padStart(2, '0');
+      return {
+        indice: +idx, fecha: `${a}-${p(m)}-${p(d)}`, hora: `${p(h)}:${p(mi)}`,
+        valor: fuera ? null : unidad === 'mmol/L' ? parseFloat(valor) : parseInt(valor, 10),
+        unidad, fuera_de_rango: fuera,
+      };
+    });
+    log('in', `${mediciones.length} mediciones · fin de sesión (ETX EOT)`);
+    pintar();
+    pararPing(); $('chkMantener').checked = false;
+    estado(`Descargado · ${mediciones.length} mediciones`, 'xb');
+  } catch (e) { log('er', e.message); estado('Error en la descarga', 'xr'); }
+}
+
+async function enviarManual() {
+  const bytes = $('inHex').value.trim().split(/[\s,]+/).filter(Boolean).map(x => parseInt(x, 16));
+  if (!bytes.length || bytes.some(b => isNaN(b) || b < 0 || b > 255)) return log('er', 'bytes inválidos');
+  try {
+    const r = await comando(bytes, { intentos: 1 });
+    const txt = String.fromCharCode(...r).replace(/[^\x20-\x7e\r\n]/g, '·');
+    log('rx', 'ascii: ' + txt.slice(0, 400));
+  } catch (e) { log('er', e.message); }
+}
+
+// ── mantener encendido ───────────────────────────────
+function arrancarPing() {
+  pararPing();
+  let n = 0;
+  const pingEl = $('ping'); pingEl.hidden = false; pingEl.className = 'bx xt'; pingEl.textContent = 'ping activo';
+  timerPing = setInterval(async () => {
+    try {
+      await comando([READ_SERIAL], { intentos: 2, silencioso: true });
+      n++; pingEl.className = 'bx xt'; pingEl.textContent = `ping ok ×${n}`;
+    } catch {
+      pingEl.className = 'bx xr'; pingEl.textContent = 'ping sin respuesta';
+      log('er', 'ping sin respuesta: el medidor se apagó o cerró la sesión');
+    }
+  }, PING_MS);
+  log('in', 'mantener encendido: activado');
+}
+function pararPing() {
+  if (timerPing) { clearInterval(timerPing); timerPing = null; log('in', 'mantener encendido: desactivado'); }
+  $('ping').hidden = true;
+}
+
+// ── UI ───────────────────────────────────────────────
+function ui(conectado) {
+  $('bConectar').disabled = conectado;
+  ['bDesconectar', 'bSerie', 'bDescargar', 'bEnviar', 'chkMantener'].forEach(id => $(id).disabled = !conectado);
+  if (!conectado) { $('chkMantener').checked = false; estado('Desconectado', 'xm'); }
+}
+
+function pintar() {
+  const tb = $('tbody');
+  tb.replaceChildren();
+  if (!mediciones.length) { tb.innerHTML = '<tr><td colspan="6" class="vacio">El medidor no tiene mediciones.</td></tr>'; }
+  for (const m of mediciones) {
+    const tr = document.createElement('tr');
+    const badge = m.fuera_de_rango ? `<span class="bx xr">${m.fuera_de_rango === 'alto' ? 'HI · >600' : 'LO · <20'}</span>`
+      : m.unidad === 'mg/dL' && m.valor < 70 ? '<span class="bx xr">hipoglucemia</span>'
+      : m.unidad === 'mg/dL' && m.valor > 180 ? '<span class="bx xw">alta</span>'
+      : '<span class="bx xg">en rango</span>';
+    tr.innerHTML = `<td class="num">${m.indice}</td><td class="mono">${m.fecha}</td><td class="mono">${m.hora}</td>
+      <td class="num">${m.valor ?? '—'}</td><td>${m.unidad}</td><td>${badge}</td>`;
+    tb.appendChild(tr);
+  }
+  const vals = mediciones.filter(m => m.valor != null).map(m => m.valor);
+  $('kCant').textContent = mediciones.length;
+  $('kRango').textContent = mediciones.length ? `${mediciones.at(-1).fecha} → ${mediciones[0].fecha}` : '—';
+  $('kProm').textContent = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : '—';
+  $('kUnidad').textContent = mediciones[0]?.unidad || 'mg/dL';
+  $('kUlt').textContent = mediciones[0] ? (mediciones[0].valor ?? mediciones[0].fuera_de_rango.toUpperCase()) : '—';
+  $('kUltF').textContent = mediciones[0] ? `${mediciones[0].fecha} ${mediciones[0].hora}` : '—';
+  $('bCsv').disabled = $('bJson').disabled = !mediciones.length;
+}
+
+function bajarCsv() {
+  const filas = [['indice', 'fecha', 'hora', 'valor', 'unidad', 'fuera_de_rango'],
+    ...mediciones.map(m => [m.indice, m.fecha, m.hora, m.valor ?? '', m.unidad, m.fuera_de_rango ?? ''])];
+  const blob = new Blob([filas.map(f => f.join(',')).join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `autocode-${serie || 'lectura'}.csv`; a.click();
+  URL.revokeObjectURL(a.href);
+}
+async function copiarJson() {
+  await navigator.clipboard.writeText(JSON.stringify({ modelo: 'Prodigy AutoCode', serie, mediciones }, null, 2));
+  log('in', 'JSON copiado al portapapeles');
+}
+
+if (!('serial' in navigator)) { $('sinSoporte').hidden = false; $('bConectar').disabled = true; }
+navigator.serial?.addEventListener('disconnect', e => { if (e.target === port) { log('er', 'el cable se desconectó'); desconectar(); } });
+
+$('bConectar').onclick = conectar;
+$('bDesconectar').onclick = desconectar;
+$('bSerie').onclick = leerSerie;
+$('bDescargar').onclick = descargar;
+$('bEnviar').onclick = enviarManual;
+$('inHex').onkeydown = e => { if (e.key === 'Enter') enviarManual(); };
+$('chkMantener').onchange = e => e.target.checked ? arrancarPing() : pararPing();
+$('bCsv').onclick = bajarCsv;
+$('bJson').onclick = copiarJson;
+$('bLimpiar').onclick = () => $('log').replaceChildren();
+</script>
+</body>
+</html>
