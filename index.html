@@ -92,13 +92,25 @@ select.fc{font-family:'Montserrat',sans-serif;width:auto;padding:4px 8px}
 .error-big{border-left:6px solid var(--wa);background:var(--wa-a);padding:18px 20px;border-radius:12px;margin-bottom:18px}
 .pie{text-align:center;margin-top:28px}
 .link{background:none;border:none;color:var(--mt);font-family:'Montserrat',sans-serif;font-size:15px;text-decoration:underline;cursor:pointer;padding:8px}
+header .marca{display:flex;align-items:center;gap:14px}
+.logo-chip{background:#fff;border-radius:12px;padding:8px 12px;display:flex;align-items:center}
+.logo-chip img{height:30px;width:auto;display:block}
+.gracias{text-align:center}
+.gracias .logo-chip{display:inline-flex;padding:14px 20px;margin-bottom:22px}
+.gracias .logo-chip img{height:52px}
+.gracias h2{font-size:34px}
+.contacto{background:var(--bg2);border-radius:var(--r);padding:16px 18px;margin:18px 0 6px;font-size:18px}
+.contacto b{font-family:var(--mono);font-size:21px;white-space:nowrap}
 @media (max-width:480px){.simple{font-size:18px}.simple h2{font-size:25px}.valor-big{font-size:60px}.paso{font-size:13px}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>Lector Prodigy AutoCode<small>Lectura por cable USB · Web Serial</small></h1>
+    <div class="marca">
+      <span class="logo-chip"><img src="logo-prodigy.svg" alt="Prodigy Diabetes"></span>
+      <h1>Lector del glucómetro<small>Prodigy AutoCode · por cable USB</small></h1>
+    </div>
     <span id="estado" class="bx xm">Desconectado</span>
   </header>
 
@@ -107,6 +119,7 @@ select.fc{font-family:'Montserrat',sans-serif;width:auto;padding:4px 8px}
       <div class="paso" id="p1"><b>1</b>Conectar</div>
       <div class="paso" id="p2"><b>2</b>Leer</div>
       <div class="paso" id="p3"><b>3</b>Reporte</div>
+      <div class="paso" id="p4"><b>4</b>Listo</div>
     </div>
 
     <section class="panel" data-fase="sinSoporte" hidden>
@@ -152,6 +165,16 @@ select.fc{font-family:'Montserrat',sans-serif;width:auto;padding:4px 8px}
       <button class="bgrande" id="sPdf">Descargar reporte para el médico</button>
       <p class="nota" style="margin-top:14px">Se abre una ventana: elegí <b>Guardar como PDF</b> y tocá <b>Guardar</b>.</p>
       <button class="bsec" id="sOtraVez">Leer de nuevo</button>
+    </section>
+
+    <section class="panel gracias" data-fase="gracias" hidden>
+      <span class="logo-chip"><img src="logo-prodigy.svg" alt="Prodigy Diabetes"></span>
+      <h2>¡Gracias por usar el lector de Prodigy!</h2>
+      <p>Tu reporte quedó guardado en la computadora. Llevalo o mandáselo a tu médico en la próxima consulta.</p>
+      <p>Seguí midiéndote como te indicó tu médico: cada medición suma.</p>
+      <div class="contacto">¿Dudas con el medidor? Servicio al cliente de Prodigy<br><b>+54 9 11 6409-6023</b></div>
+      <button class="bsec" id="sOtraVezPdf">Volver a descargar el reporte</button>
+      <button class="bsec" id="sTerminar">Terminar</button>
     </section>
 
     <section class="panel" data-fase="error" hidden>
@@ -261,6 +284,10 @@ const FIN_SERIE = [0x00, 0x9D, 0x9E];
 const FILTROS = [{ usbVendorId: 0x067B, usbProductId: 0x2303 }]; // Prolific PL2303
 
 const $ = id => document.getElementById(id);
+
+// Logo del reporte: data URI para que ya esté cargado cuando se imprime el iframe.
+let LOGO_SRC = '';
+fetch('logo-prodigy.svg').then(r => r.ok ? r.text() : '').then(t => { if (t) LOGO_SRC = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(t); }).catch(() => {});
 let port = null, reader = null, writer = null, rx = [], ocupado = Promise.resolve(), timerPing = null;
 let mediciones = [], serie = '';
 
@@ -275,15 +302,15 @@ function log(tipo, txt) {
 function estado(txt, cls) { const e = $('estado'); e.textContent = txt; e.className = 'bx ' + cls; }
 
 // ── vista simple ─────────────────────────────────────
-// Una fase a la vez: sinSoporte · desconectado · conectando · conectado · descargando · listo · error
+// Una fase a la vez: sinSoporte · desconectado · conectando · conectado · descargando · listo · gracias · error
 let fase = 'desconectado';
 function simple(f, msgError) {
   fase = f;
   document.querySelectorAll('#vistaSimple [data-fase]').forEach(el => el.hidden = el.dataset.fase !== f);
   if (msgError) $('sError').textContent = msgError;
-  const n = { desconectado: 1, conectando: 1, error: 1, sinSoporte: 1, conectado: 2, descargando: 2, listo: 3 }[f];
-  ['p1', 'p2', 'p3'].forEach((id, i) => $(id).className = 'paso' + (i + 1 < n ? ' ok' : i + 1 === n ? ' on' : ''));
-  const foco = document.querySelector(`#vistaSimple [data-fase="${f}"] .bgrande`);
+  const n = { desconectado: 1, conectando: 1, error: 1, sinSoporte: 1, conectado: 2, descargando: 2, listo: 3, gracias: 5 }[f];
+  ['p1', 'p2', 'p3', 'p4'].forEach((id, i) => $(id).className = 'paso' + (i + 1 < n ? ' ok' : i + 1 === n ? ' on' : ''));
+  const foco = document.querySelector(`#vistaSimple [data-fase="${f}"] .bgrande, #vistaSimple [data-fase="${f}"] .bsec`);
   if (foco && !$('vistaSimple').hidden) foco.focus({ preventScroll: true });
 }
 const MSG_NO_RESPONDE = 'El medidor no contesta. Fijate que el cable esté bien enchufado en el medidor, apagalo y volvé a prenderlo, y probá de nuevo.';
@@ -344,7 +371,7 @@ async function desconectar() {
   try { await port?.close(); } catch {}
   port = reader = writer = null;
   ui(false); log('in', 'puerto cerrado');
-  if (!['listo', 'error'].includes(fase)) simple('desconectado');
+  if (!['listo', 'gracias', 'error'].includes(fase)) simple('desconectado');
 }
 
 const espera = ms => new Promise(r => setTimeout(r, ms));
@@ -518,7 +545,7 @@ function periodoSimple() {
   return p.filas.length ? { ...p, etiqueta: 'En los últimos 30 días' } : { ...delPeriodo(0), etiqueta: 'En total' };
 }
 
-function generarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value } = {}) {
+function generarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value, alTerminar } = {}) {
   const { filas, desde } = periodo;
   if (!filas.length) return;
   const rows = filas.map(m => ({
@@ -533,6 +560,7 @@ function generarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value } = {
     desde: desde || aFecha(fechas[0]),
     hasta: new Date(),
     origen: `Datos descargados del glucómetro Prodigy AutoCode${serie ? ' · serie ' + serie : ''}`,
+    logoSrc: LOGO_SRC,
   });
   const fr = document.createElement('iframe');
   fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
@@ -540,8 +568,9 @@ function generarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value } = {
   fr.contentDocument.open(); fr.contentDocument.write(html); fr.contentDocument.close();
   fr.onload = null;
   setTimeout(() => {
-    fr.contentWindow.focus(); fr.contentWindow.print();
+    fr.contentWindow.focus(); fr.contentWindow.print(); // en Chrome bloquea hasta que se cierra el diálogo
     setTimeout(() => fr.remove(), 60000);
+    alTerminar?.();
   }, 300);
   log('in', `reporte PDF: ${rows.length} mediciones`);
 }
@@ -628,7 +657,9 @@ $('bPdf').onclick = generarPdf;
 $('selPeriodo').onchange = infoPeriodo;
 $('sBuscar').onclick = () => conectar();
 $('sLeer').onclick = descargar;
-$('sPdf').onclick = () => generarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value });
+$('sPdf').onclick = () => generarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, alTerminar: () => simple('gracias') });
+$('sOtraVezPdf').onclick = () => simple('listo');
+$('sTerminar').onclick = async () => { if (port) await desconectar(); fase = 'desconectado'; simple('desconectado'); };
 $('sNombre').oninput = e => guardarNombre(e.target.value);
 $('inNombre').oninput = e => guardarNombre(e.target.value);
 $('sOtraVez').onclick = async () => { await desconectar(); simple('desconectado'); };

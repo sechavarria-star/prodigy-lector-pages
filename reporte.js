@@ -14,13 +14,16 @@
 //   - Recibe las filas por parámetro y el período es configurable.
 //   - Los valores HI/LO (sin número) se excluyen de promedios y gráfico; van en la tabla.
 //     LO cuenta como hipoglucemia.
-//   - Sin logo: el original tiene {{LOGO_SRC}} sin resolver (pendiente 4 del repo prodigy).
+//   - Logo: el original deja {{LOGO_SRC}} y lo reemplaza el Apps Script con
+//     https://prodigydiabetes.com.ar/images/Asset-3.svg. Acá se recibe como logoSrc
+//     (copia local logo-prodigy.svg, como data URI para que esté listo al imprimir).
+//     Va sobre un recuadro blanco: el azul del logo no se lee sobre el verde del encabezado.
 //   - Línea de origen bajo el período (glucómetro + número de serie) y CSS de impresión A4.
 
 const escapar = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // rows: [{ fecha_medicion:'YYYY-MM-DD', hora_medicion:'HH:MM', valor:number|'HI'|'LO' }]
-function armarHtmlReporte({ rows, nombre = 'Paciente', desde, hasta = new Date(), origen = '' }) {
+function armarHtmlReporte({ rows, nombre = 'Paciente', desde, hasta = new Date(), origen = '', logoSrc = '' }) {
   const fmtFecha = (f) => { if(!f) return ''; const p = String(f).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : f; };
   const fmtCorto = (f) => { if(!f) return ''; const p = String(f).split('-'); return p.length===3 ? p[2]+'/'+p[1] : f; };
   const DIAS = ['Dom', 'Lun', 'Mar', 'Mi&eacute;', 'Jue', 'Vie', 'S&aacute;b'];
@@ -124,7 +127,7 @@ function armarHtmlReporte({ rows, nombre = 'Paciente', desde, hasta = new Date()
   const lineaOrigen = origen ? `<div style="font-size:10px;color:#5F5E5A;margin-top:2px;">${escapar(origen)}</div>` : '';
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Reporte de Mediciones</title><style>body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:0;color:#2C2C2A;background:#fff;}@page{size:A4;margin:0}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}tr{break-inside:avoid}</style></head><body>
-<div style="background:#0F6E56;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;align-items:center;gap:14px;"><div><div style="font-size:20px;font-weight:bold;color:#ffffff;">Prodigy Diabetes</div><div style="font-size:12px;color:#9FE1CB;">Reporte de mediciones de glucemia por d&iacute;a</div></div></div><div style="text-align:right;font-size:11px;color:#E1F5EE;"><div style="font-size:10px;color:#5DCAA5;text-transform:uppercase;">Generado</div>${fmtD(hoy)}</div></div>
+<div style="background:#0F6E56;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;align-items:center;gap:14px;">${logoSrc ? `<div style="background:#ffffff;border-radius:8px;padding:6px 10px;"><img src="${logoSrc}" alt="Prodigy" style="height:32px;width:auto;display:block;"/></div>` : ''}<div><div style="font-size:20px;font-weight:bold;color:#ffffff;">Prodigy Diabetes</div><div style="font-size:12px;color:#9FE1CB;">Reporte de mediciones de glucemia por d&iacute;a</div></div></div><div style="text-align:right;font-size:11px;color:#E1F5EE;"><div style="font-size:10px;color:#5DCAA5;text-transform:uppercase;">Generado</div>${fmtD(hoy)}</div></div>
 <div style="padding:22px 28px;">
 <div style="display:flex;gap:10px;margin-bottom:12px;"><div style="flex:1;background:#F1EFE8;border-radius:8px;padding:11px 14px;"><div style="font-size:10px;color:#5F5E5A;text-transform:uppercase;">Paciente</div><div style="font-size:15px;font-weight:bold;color:#2C2C2A;">${escapar(nombre)}</div></div><div style="flex:1.4;background:#F1EFE8;border-radius:8px;padding:11px 14px;"><div style="font-size:10px;color:#5F5E5A;text-transform:uppercase;">Per&iacute;odo</div><div style="font-size:13px;font-weight:bold;color:#2C2C2A;">${fmtD(desde)} - ${fmtD(hasta)} &middot; ${rows.length} mediciones en ${dias.length} d&iacute;as</div>${lineaOrigen}</div></div>
 <div style="display:flex;gap:10px;margin-bottom:22px;"><div style="flex:1;background:#F1EFE8;border-radius:8px;padding:11px 14px;text-align:center;"><div style="font-size:10px;color:#5F5E5A;text-transform:uppercase;">Promedio</div><div style="font-size:22px;font-weight:bold;color:#2C2C2A;">${promedio}<span style="font-size:11px;font-weight:normal;color:#888780;"> mg/dL</span></div></div><div style="flex:1;background:${bgRango};border-radius:8px;padding:11px 14px;text-align:center;"><div style="font-size:10px;color:${colorRango};text-transform:uppercase;">Tiempo en Rango (70-140)</div><div style="font-size:22px;font-weight:bold;color:${colorRango};">${pctEnRango}%</div></div><div style="flex:1;background:${bgHipo};border-radius:8px;padding:11px 14px;text-align:center;"><div style="font-size:10px;color:${colorHipo};text-transform:uppercase;">Hipoglucemias (&lt;70)</div><div style="font-size:22px;font-weight:bold;color:${colorHipo};">${hipoglucemias}</div></div></div>
