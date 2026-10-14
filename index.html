@@ -61,6 +61,38 @@ select.fc{font-family:'Montserrat',sans-serif;width:auto;padding:4px 8px}
 .vacio{color:var(--mt);font-size:12px;padding:14px 0}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:700px){.g2{grid-template-columns:1fr}}
+
+/* ── Vista simple: pensada para una persona mayor. Letra grande, un paso a la vez. ── */
+.simple{max-width:640px;margin:0 auto;font-size:20px;line-height:1.55}
+.simple h2{font-size:30px;line-height:1.25;margin-bottom:14px}
+.simple p{margin-bottom:14px}
+.pasos{display:flex;gap:8px;margin-bottom:22px}
+.paso{flex:1;text-align:center;font-size:15px;font-weight:600;color:var(--mt2);padding:10px 4px;border-radius:var(--r);background:var(--card);border:1px solid var(--b)}
+.paso b{display:block;font-size:22px}
+.paso.on{color:var(--tx);border-color:var(--blue);background:var(--blue-a)}
+.paso.ok{color:var(--ok);border-color:var(--ok-a)}
+.panel{background:var(--card);border:1px solid var(--b);border-radius:16px;padding:28px 24px}
+.lista{margin:0 0 22px 0;padding-left:0;list-style:none;counter-reset:n}
+.lista li{counter-increment:n;display:flex;gap:14px;align-items:flex-start;margin-bottom:14px}
+.lista li::before{content:counter(n);flex:none;width:38px;height:38px;border-radius:50%;background:var(--blue-a);color:var(--blue);font-weight:700;display:flex;align-items:center;justify-content:center}
+.bgrande{display:flex;width:100%;justify-content:center;align-items:center;min-height:72px;padding:18px 24px;border-radius:14px;border:none;cursor:pointer;font-family:'Montserrat',sans-serif;font-size:23px;font-weight:700;background:var(--b2);color:#fff;transition:.15s}
+.bgrande:hover{background:var(--blue)}
+.bgrande:focus-visible{outline:4px solid var(--blue);outline-offset:3px}
+.bsec{display:flex;width:100%;justify-content:center;min-height:60px;margin-top:12px;padding:14px 20px;border-radius:14px;cursor:pointer;font-family:'Montserrat',sans-serif;font-size:19px;font-weight:600;background:transparent;color:var(--tx);border:2px solid var(--b)}
+.bsec:hover{border-color:var(--blue)}
+.nota{font-size:16px;color:var(--mt)}
+.ok-big{color:var(--ok);font-weight:700}
+.valor-big{font-family:var(--mono);font-size:76px;font-weight:700;line-height:1;margin:6px 0}
+.valor-big small{font-family:'Montserrat',sans-serif;font-size:22px;font-weight:600;color:var(--mt)}
+.etiqueta{display:inline-block;font-size:19px;font-weight:700;padding:6px 16px;border-radius:30px;margin:8px 0 18px}
+.resumen{background:var(--bg2);border-radius:var(--r);padding:16px 18px;margin-bottom:22px}
+.campo{display:block;font-size:18px;font-weight:600;margin-bottom:8px}
+.input-big{width:100%;font-family:'Montserrat',sans-serif;font-size:22px;padding:14px 16px;border-radius:12px;border:2px solid var(--b);background:var(--bg2);color:var(--tx);margin-bottom:18px}
+.input-big:focus{outline:none;border-color:var(--blue)}
+.error-big{border-left:6px solid var(--wa);background:var(--wa-a);padding:18px 20px;border-radius:12px;margin-bottom:18px}
+.pie{text-align:center;margin-top:28px}
+.link{background:none;border:none;color:var(--mt);font-family:'Montserrat',sans-serif;font-size:15px;text-decoration:underline;cursor:pointer;padding:8px}
+@media (max-width:480px){.simple{font-size:18px}.simple h2{font-size:25px}.valor-big{font-size:60px}.paso{font-size:13px}}
 </style>
 </head>
 <body>
@@ -70,6 +102,70 @@ select.fc{font-family:'Montserrat',sans-serif;width:auto;padding:4px 8px}
     <span id="estado" class="bx xm">Desconectado</span>
   </header>
 
+  <main id="vistaSimple" class="simple" aria-live="polite">
+    <div class="pasos" aria-hidden="true">
+      <div class="paso" id="p1"><b>1</b>Conectar</div>
+      <div class="paso" id="p2"><b>2</b>Leer</div>
+      <div class="paso" id="p3"><b>3</b>Reporte</div>
+    </div>
+
+    <section class="panel" data-fase="sinSoporte" hidden>
+      <h2>Abrí esta página en Google Chrome</h2>
+      <p>Este navegador no puede leer el medidor por cable. Copiá la dirección de esta página y abrila en <b>Google Chrome</b> o <b>Microsoft Edge</b> en una computadora.</p>
+    </section>
+
+    <section class="panel" data-fase="desconectado">
+      <h2>Conectá tu medidor</h2>
+      <ol class="lista">
+        <li>Enchufá el cable al medidor y a la computadora.</li>
+        <li>Prendé el medidor.</li>
+        <li>Tocá el botón azul.</li>
+      </ol>
+      <button class="bgrande" id="sBuscar">Buscar mi medidor</button>
+      <p class="nota" style="margin-top:16px">La primera vez aparece una ventanita pidiendo permiso: tocá <b>USB-Serial Controller</b> y después <b>Conectar</b> (o <b>Connect</b>).</p>
+    </section>
+
+    <section class="panel" data-fase="conectando" hidden>
+      <h2>Buscando el medidor…</h2>
+      <p>Esperá unos segundos.</p>
+    </section>
+
+    <section class="panel" data-fase="conectado" hidden>
+      <h2><span class="ok-big">✓</span> Medidor conectado</h2>
+      <p>Ahora vamos a leer las mediciones que tiene guardadas.</p>
+      <button class="bgrande" id="sLeer">Leer mis mediciones</button>
+    </section>
+
+    <section class="panel" data-fase="descargando" hidden>
+      <h2>Leyendo las mediciones…</h2>
+      <p>No desenchufes el cable. Tarda unos segundos.</p>
+    </section>
+
+    <section class="panel" data-fase="listo" hidden>
+      <p style="margin-bottom:0">Tu última medición</p>
+      <div class="valor-big" id="sValor">—</div>
+      <div id="sFecha" style="font-size:19px"></div>
+      <span class="etiqueta" id="sEtiqueta"></span>
+      <div class="resumen" id="sResumen"></div>
+      <label class="campo" for="sNombre">Tu nombre (aparece en el reporte)</label>
+      <input class="input-big" id="sNombre" autocomplete="name" placeholder="Nombre y apellido">
+      <button class="bgrande" id="sPdf">Descargar reporte para el médico</button>
+      <p class="nota" style="margin-top:14px">Se abre una ventana: elegí <b>Guardar como PDF</b> y tocá <b>Guardar</b>.</p>
+      <button class="bsec" id="sOtraVez">Leer de nuevo</button>
+    </section>
+
+    <section class="panel" data-fase="error" hidden>
+      <div class="error-big">
+        <h2 style="font-size:25px;margin-bottom:8px">No pudimos leer el medidor</h2>
+        <p id="sError" style="margin:0"></p>
+      </div>
+      <button class="bgrande" id="sReintentar">Probar de nuevo</button>
+    </section>
+
+    <div class="pie"><button class="link" id="aTecnico">Modo técnico</button></div>
+  </main>
+
+  <div id="vistaTecnica" hidden>
   <div id="sinSoporte" class="aviso" hidden>
     Este navegador no soporta Web Serial. Abrí la página en <b>Chrome</b> o <b>Edge</b> de escritorio.
   </div>
@@ -150,6 +246,8 @@ select.fc{font-family:'Montserrat',sans-serif;width:auto;padding:4px 8px}
     </div>
     <div class="log" id="log"></div>
   </div>
+  <div class="pie"><button class="link" id="aSimple">Volver a la vista simple</button></div>
+  </div>
 </div>
 
 <script src="reporte.js"></script>
@@ -176,6 +274,20 @@ function log(tipo, txt) {
 }
 function estado(txt, cls) { const e = $('estado'); e.textContent = txt; e.className = 'bx ' + cls; }
 
+// ── vista simple ─────────────────────────────────────
+// Una fase a la vez: sinSoporte · desconectado · conectando · conectado · descargando · listo · error
+let fase = 'desconectado';
+function simple(f, msgError) {
+  fase = f;
+  document.querySelectorAll('#vistaSimple [data-fase]').forEach(el => el.hidden = el.dataset.fase !== f);
+  if (msgError) $('sError').textContent = msgError;
+  const n = { desconectado: 1, conectando: 1, error: 1, sinSoporte: 1, conectado: 2, descargando: 2, listo: 3 }[f];
+  ['p1', 'p2', 'p3'].forEach((id, i) => $(id).className = 'paso' + (i + 1 < n ? ' ok' : i + 1 === n ? ' on' : ''));
+  const foco = document.querySelector(`#vistaSimple [data-fase="${f}"] .bgrande`);
+  if (foco && !$('vistaSimple').hidden) foco.focus({ preventScroll: true });
+}
+const MSG_NO_RESPONDE = 'El medidor no contesta. Fijate que el cable esté bien enchufado en el medidor, apagalo y volvé a prenderlo, y probá de nuevo.';
+
 // ── serie ────────────────────────────────────────────
 // Puerto ya autorizado en este navegador: se usa sin mostrar el selector de Chrome.
 async function puertoAutorizado() {
@@ -190,6 +302,7 @@ async function conectar(automatico = false) {
     if (port) log('in', 'medidor ya autorizado: conectando sin preguntar');
     else if (automatico) return;
     else port = await navigator.serial.requestPort({ filters: FILTROS });
+    simple('conectando');
     await port.open({ baudRate: BAUD, dataBits: 8, parity: 'none', stopBits: 1 });
     writer = port.writable.getWriter();
     leerSiempre();
@@ -198,12 +311,16 @@ async function conectar(automatico = false) {
     ui(true);
     await leerSerie();
   } catch (e) {
-    if (e.name === 'NotFoundError') { log('er', 'No se eligió ningún puerto. Si no aparece el selector, abrí la página en Chrome.'); estado('Sin puerto', 'xw'); }
+    if (e.name === 'NotFoundError') {
+      log('er', 'No se eligió ningún puerto. Si no aparece el selector, abrí la página en Chrome.'); estado('Sin puerto', 'xw');
+      simple('error', 'No se eligió el medidor en la ventanita. Si no aparece en la lista, revisá que el cable esté enchufado a la computadora.');
+    }
     else if (e.name === 'NetworkError' || e.name === 'InvalidStateError') {
       log('er', 'El puerto ya está abierto en otra pestaña u otro programa. Cerralo (o tocá Desconectar ahí) y reintentá.');
       estado('Puerto ocupado', 'xw');
+      simple('error', 'El medidor está abierto en otra pestaña o ventana. Cerrá las otras pestañas de esta página y probá de nuevo.');
     }
-    else { log('er', e.message); estado('Error al conectar', 'xr'); }
+    else { log('er', e.message); estado('Error al conectar', 'xr'); simple('error', MSG_NO_RESPONDE); }
     port = null;
   }
 }
@@ -227,6 +344,7 @@ async function desconectar() {
   try { await port?.close(); } catch {}
   port = reader = writer = null;
   ui(false); log('in', 'puerto cerrado');
+  if (!['listo', 'error'].includes(fase)) simple('desconectado');
 }
 
 const espera = ms => new Promise(r => setTimeout(r, ms));
@@ -273,12 +391,13 @@ async function leerSerie() {
     serie = String.fromCharCode(...r.slice(r[0] < 0x20 ? 1 : 0, fin)).trim();
     $('kSerie').textContent = serie; $('kpis').hidden = false;
     estado('Conectado · ' + serie, 'xg');
-  } catch (e) { log('er', e.message); estado('Sin respuesta', 'xw'); }
+    if (fase !== 'listo') simple('conectado');
+  } catch (e) { log('er', e.message); estado('Sin respuesta', 'xw'); if (fase !== 'listo') simple('error', MSG_NO_RESPONDE); }
 }
 
 async function descargar() {
   try {
-    estado('Descargando…', 'xt');
+    estado('Descargando…', 'xt'); simple('descargando');
     const r = await comando([READ_RECORDS]);
     const ini = r.indexOf(STX), fin = r.indexOf(ETX);
     if (ini < 0 || fin < 0) throw new Error('Respuesta sin STX/ETX: no la pude interpretar');
@@ -298,7 +417,8 @@ async function descargar() {
     pintar();
     pararPing(); $('chkMantener').checked = false;
     estado(`Descargado · ${mediciones.length} mediciones`, 'xb');
-  } catch (e) { log('er', e.message); estado('Error en la descarga', 'xr'); }
+    pintarSimple(); simple('listo');
+  } catch (e) { log('er', e.message); estado('Error en la descarga', 'xr'); simple('error', MSG_NO_RESPONDE); }
 }
 
 async function enviarManual() {
@@ -378,8 +498,7 @@ async function copiarJson() {
 }
 
 // ── reporte PDF ──────────────────────────────────────
-function delPeriodo() {
-  const dias = +$('selPeriodo').value;
+function delPeriodo(dias = +$('selPeriodo').value) {
   if (!dias) return { filas: mediciones, desde: null };
   const desde = new Date(Date.now() - dias * 864e5);
   const corte = desde.toISOString().slice(0, 10);
@@ -393,8 +512,14 @@ function infoPeriodo() {
   $('bPdf').disabled = !n;
 }
 
-function generarPdf() {
-  const { filas, desde } = delPeriodo();
+// Vista simple: últimos 30 días; si no hay nada en ese lapso, todas.
+function periodoSimple() {
+  const p = delPeriodo(30);
+  return p.filas.length ? { ...p, etiqueta: 'En los últimos 30 días' } : { ...delPeriodo(0), etiqueta: 'En total' };
+}
+
+function generarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value } = {}) {
+  const { filas, desde } = periodo;
   if (!filas.length) return;
   const rows = filas.map(m => ({
     fecha_medicion: m.fecha, hora_medicion: m.hora,
@@ -404,7 +529,7 @@ function generarPdf() {
   const aFecha = f => { const [a, me, d] = f.split('-'); return new Date(+a, me - 1, +d); };
   const html = armarHtmlReporte({
     rows,
-    nombre: $('inNombre').value.trim() || 'Paciente',
+    nombre: nombre.trim() || 'Paciente',
     desde: desde || aFecha(fechas[0]),
     hasta: new Date(),
     origen: `Datos descargados del glucómetro Prodigy AutoCode${serie ? ' · serie ' + serie : ''}`,
@@ -421,6 +546,52 @@ function generarPdf() {
   log('in', `reporte PDF: ${rows.length} mediciones`);
 }
 
+const DIAS_L = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const MESES_L = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+function fechaLarga(f, h) {
+  const [a, m, d] = f.split('-').map(Number), dt = new Date(a, m - 1, d);
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const dif = Math.round((hoy - dt) / 864e5);
+  const dia = dif === 0 ? 'Hoy' : dif === 1 ? 'Ayer' : `${DIAS_L[dt.getDay()][0].toUpperCase() + DIAS_L[dt.getDay()].slice(1)} ${d} de ${MESES_L[m - 1]}${a !== hoy.getFullYear() ? ' de ' + a : ''}`;
+  return `${dia}, a las ${h}`;
+}
+
+function pintarSimple() {
+  const u = mediciones[0];
+  if (!u) {
+    $('sValor').textContent = '—'; $('sFecha').textContent = 'El medidor no tiene mediciones guardadas.';
+    $('sEtiqueta').hidden = true; $('sResumen').hidden = true; $('sPdf').disabled = true; return;
+  }
+  $('sValor').innerHTML = '';
+  $('sValor').append(u.valor ?? (u.fuera_de_rango === 'alto' ? 'HI' : 'LO'));
+  const small = document.createElement('small'); small.textContent = ' ' + u.unidad; $('sValor').append(small);
+  $('sFecha').textContent = fechaLarga(u.fecha, u.hora);
+  const bajo = u.fuera_de_rango === 'bajo' || (u.unidad === 'mg/dL' && u.valor < 70);
+  const alto = u.fuera_de_rango === 'alto' || (u.unidad === 'mg/dL' && u.valor > 180);
+  const et = $('sEtiqueta'); et.hidden = false;
+  et.textContent = bajo ? 'Baja' : alto ? 'Alta' : 'En rango';
+  et.className = 'etiqueta bx ' + (bajo ? 'xr' : alto ? 'xw' : 'xg');
+  const p = periodoSimple(), nums = p.filas.filter(m => m.valor != null).map(m => m.valor);
+  const prom = nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : null;
+  $('sResumen').hidden = false;
+  $('sResumen').textContent = `${p.etiqueta}: ${p.filas.length} ${p.filas.length === 1 ? 'medición' : 'mediciones'}` + (prom !== null ? ` · promedio ${prom} ${u.unidad}` : '');
+  $('sPdf').disabled = !p.filas.length;
+}
+
+// El nombre se recuerda en este navegador (solo comodidad; puede no estar disponible).
+const NOMBRE_KEY = 'lector-autocode:nombre';
+function guardarNombre(v) { try { localStorage.setItem(NOMBRE_KEY, v); } catch {} $('inNombre').value = v; $('sNombre').value = v; }
+try { const n = localStorage.getItem(NOMBRE_KEY); if (n) { $('inNombre').value = n; $('sNombre').value = n; } } catch {}
+
+const VISTA_KEY = 'lector-autocode:vista';
+function verVista(tecnica) {
+  $('vistaSimple').hidden = tecnica; $('vistaTecnica').hidden = !tecnica;
+  try { localStorage.setItem(VISTA_KEY, tecnica ? 'tecnica' : 'simple'); } catch {}
+  window.scrollTo(0, 0);
+}
+let vistaGuardada = null; try { vistaGuardada = localStorage.getItem(VISTA_KEY); } catch {}
+verVista(new URLSearchParams(location.search).has('tecnico') || vistaGuardada === 'tecnica');
+
 // ?demo carga mediciones ficticias para probar la página sin medidor
 if (new URLSearchParams(location.search).has('demo')) {
   const hoy = new Date(), p = n => String(n).padStart(2, '0');
@@ -434,10 +605,11 @@ if (new URLSearchParams(location.search).has('demo')) {
   });
   serie = 'DEMO'; $('kSerie').textContent = 'DEMO'; $('kpis').hidden = false;
   estado('Modo demo · datos ficticios', 'xw');
-  pintar();
+  pintar(); pintarSimple(); simple('listo');
 }
 
-if (!('serial' in navigator)) { $('sinSoporte').hidden = false; $('bConectar').disabled = true; }
+if (!('serial' in navigator)) { $('sinSoporte').hidden = false; $('bConectar').disabled = true; simple('sinSoporte'); }
+else if (fase === 'desconectado') simple('desconectado');
 // Al abrir la página o enchufar el cable, conecta solo si el puerto ya estaba autorizado.
 navigator.serial?.addEventListener('connect', () => conectar(true));
 if ('serial' in navigator && !new URLSearchParams(location.search).has('demo')) conectar(true);
@@ -454,6 +626,15 @@ $('bCsv').onclick = bajarCsv;
 $('bJson').onclick = copiarJson;
 $('bPdf').onclick = generarPdf;
 $('selPeriodo').onchange = infoPeriodo;
+$('sBuscar').onclick = () => conectar();
+$('sLeer').onclick = descargar;
+$('sPdf').onclick = () => generarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value });
+$('sNombre').oninput = e => guardarNombre(e.target.value);
+$('inNombre').oninput = e => guardarNombre(e.target.value);
+$('sOtraVez').onclick = async () => { await desconectar(); simple('desconectado'); };
+$('sReintentar').onclick = async () => { if (port) await desconectar(); simple('desconectado'); conectar(); };
+$('aTecnico').onclick = () => verVista(true);
+$('aSimple').onclick = () => verVista(false);
 $('bLimpiar').onclick = () => $('log').replaceChildren();
 </script>
 </body>

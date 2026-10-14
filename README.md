@@ -15,4 +15,10 @@ Protocolo: UART 9600 8N1 sobre cable Prolific PL2303, comandos de 1 byte
 Python en el repo `prodigy` (`scripts/leer_autocode.py`). Basado en el driver
 open source de [Tidepool Uploader](https://github.com/tidepool-org/uploader).
 
+**Vista simple** (la de entrada): pensada para una persona mayor, con letra grande
+y un paso a la vez: conectar → leer → descargar el reporte. El log, el comando
+manual, el keep-alive y la tabla están en el **modo técnico** (link al pie, o
+`?tecnico`). La página recuerda la vista elegida y el nombre del paciente en el
+navegador.
+
 Para probar sin medidor: `?demo` carga mediciones ficticias.
