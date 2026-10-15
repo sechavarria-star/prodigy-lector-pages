@@ -93,6 +93,8 @@ select.fc{font-family:'Montserrat',sans-serif;width:auto;padding:4px 8px}
 .pie{text-align:center;margin-top:28px}
 .link{background:none;border:none;color:var(--mt);font-family:'Montserrat',sans-serif;font-size:15px;text-decoration:underline;cursor:pointer;padding:8px}
 header .marca{display:flex;align-items:center;gap:14px}
+/* En la vista simple el encabezado toma el mismo ancho que los pasos: el logo queda alineado con el paso 1. */
+body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
 .logo-chip{background:#fff;border-radius:12px;padding:8px 12px;display:flex;align-items:center}
 .logo-chip img{height:30px;width:auto;display:block}
 .gracias{text-align:center}
@@ -615,6 +617,7 @@ try { const n = localStorage.getItem(NOMBRE_KEY); if (n) { $('inNombre').value =
 const VISTA_KEY = 'lector-autocode:vista';
 function verVista(tecnica) {
   $('vistaSimple').hidden = tecnica; $('vistaTecnica').hidden = !tecnica;
+  document.body.classList.toggle('vista-simple', !tecnica);
   try { localStorage.setItem(VISTA_KEY, tecnica ? 'tecnica' : 'simple'); } catch {}
   window.scrollTo(0, 0);
 }
