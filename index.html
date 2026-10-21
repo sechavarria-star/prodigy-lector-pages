@@ -765,7 +765,9 @@ function interpretar(r) {
   for (const b of r) {
     if (b === STX) { dentro = true; bloques++; texto += '\r\n'; continue; }
     if (b === ETX) { dentro = false; continue; }
-    if (dentro) texto += String.fromCharCode(b);
+    // 0x00 = relleno: el modelo HID intercala paquetes de relleno (visto por USB directo en Mac,
+    // 21/10/2026) que pueden meter ceros en el medio y romper renglones.
+    if (dentro && b !== 0x00) texto += String.fromCharCode(b);
   }
   const p = n => String(n).padStart(2, '0');
   const porIndice = new Map(); let corruptas = 0;
