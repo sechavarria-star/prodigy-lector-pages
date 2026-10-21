@@ -161,8 +161,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
         <li>Tocá el botón azul.</li>
       </ol>
       <button class="bgrande" id="sBuscar">Buscar mi medidor</button>
-      <p class="nota" style="margin-top:16px">La primera vez aparece una ventanita pidiendo permiso: tocá <b>Glucose Meter</b> y después <b>Conectar</b> (o <b>Connect</b>). Si el medidor muestra <b>Lnk</b>, buscalo enseguida: se apaga a los pocos segundos.</p>
-      <button class="bsec" id="sBuscarSerie">Mi medidor tiene un cable aparte (modelo anterior)</button>
+      <p class="nota" style="margin-top:16px">La primera vez aparece una ventanita pidiendo permiso: tocá tu medidor (puede figurar como <b>Glucose Meter</b> o <b>USB-Serial Controller</b>) y después <b>Conectar</b> (o <b>Connect</b>). Si no aparece en la lista, cerrá la ventanita: la página lo busca de la otra forma. Si el medidor muestra <b>Lnk</b>, buscalo enseguida: se apaga a los pocos segundos.</p>
     </section>
 
     <section class="panel" data-fase="conectando" hidden>
@@ -212,7 +211,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
         <p id="sError" style="margin:0"></p>
       </div>
       <button class="bgrande" id="sReintentar">Probar de nuevo</button>
-      <button class="bsec" id="sReintentarSerie">Mi medidor tiene un cable aparte (modelo anterior)</button>
+      <button class="bsec" id="sOtroTipo">Buscar de la otra forma</button>
     </section>
 
     <div class="pie"><button class="link" id="aTecnico">Modo técnico</button></div>
@@ -453,6 +452,7 @@ function estado(txt, cls) { const e = $('estado'); e.textContent = txt; e.classN
 let fase = 'desconectado';
 function simple(f, msgError) {
   fase = f;
+  $('sOtroTipo').hidden = true; // solo lo muestra buscarMedidor() cuando hace falta
   document.querySelectorAll('#vistaSimple [data-fase]').forEach(el => el.hidden = el.dataset.fase !== f);
   if (msgError) $('sError').textContent = msgError;
   const n = { desconectado: 1, conectando: 1, error: 1, sinSoporte: 1, conectado: 2, descargando: 2, listo: 3, gracias: 5 }[f];
@@ -509,6 +509,59 @@ async function conectar(automatico = false, tipo = 'auto') {
     else { log('er', e.message); estado('Error al conectar', 'xr'); simple('error', MSG_NO_RESPONDE); registrar('error', { tipo: 'conexion', nombre: e.name }); }
     port = null;
   }
+}
+
+// ── Búsqueda automática ──────────────────────────────
+// El navegador no deja ver qué hay enchufado sin permiso, y cada ventanita de permiso es de
+// un tipo (USB integrado = WebHID, cable aparte = Web Serial). Se abre primero la más
+// probable (Windows: USB integrado; Mac: cable, porque el USB integrado no anda en Mac) y,
+// si el usuario la cierra sin elegir, la otra enseguida (mientras dure el gesto del toque).
+let otroTipo = 'serie';
+const NOMBRE_TIPO = { hid: 'USB integrado', serie: 'cable aparte' };
+
+async function elegir(tipo) {
+  try {
+    if (tipo === 'hid') {
+      if (!('hid' in navigator)) return null;
+      return (await navigator.hid.requestDevice({ filters: HID_FILTROS }))[0] || null;
+    }
+    if (!('serial' in navigator)) return null;
+    return await navigator.serial.requestPort({ filters: FILTROS });
+  } catch (e) {
+    if (e.name !== 'NotFoundError') log('er', `selector ${tipo}: ${e.name} ${e.message}`);
+    return null;
+  }
+}
+
+async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie']) {
+  if (port || hidDev) return;
+  orden = orden.filter(t => t === 'hid' ? 'hid' in navigator : 'serial' in navigator);
+  for (let i = 0; i < orden.length; i++) {
+    const tipo = orden[i];
+    // La 2ª ventanita solo se puede abrir si sigue vivo el gesto del toque; si no, se ofrece un botón.
+    if (i > 0 && navigator.userActivation && !navigator.userActivation.isActive) {
+      otroTipo = tipo;
+      simple('error', 'No encontramos el medidor en la ventanita. Tocá el botón de abajo para buscarlo de la otra forma.');
+      $('sOtroTipo').textContent = `Buscar mi medidor (${NOMBRE_TIPO[tipo]})`;
+      $('sOtroTipo').hidden = false;
+      return;
+    }
+    log('in', `buscando medidor: ${NOMBRE_TIPO[tipo]}`);
+    const elegido = await elegir(tipo);
+    if (elegido) {
+      ultimoTipo = tipo;
+      await conectar(true, 'auto'); // ya autorizado: conecta sin volver a preguntar
+      return;
+    }
+  }
+  sinMedidor();
+}
+
+function sinMedidor() {
+  simple('error', ES_MAC
+    ? 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido. Si tu medidor tiene el USB integrado (sin cable aparte), en computadoras Mac no se puede leer desde el navegador: usá una PC con Windows.'
+    : 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido (que muestre Lnk o PC) y probá de nuevo.');
+  registrar('error', { tipo: 'sin_medidor', mac: ES_MAC });
 }
 
 // ── USB integrado (WebHID) ───────────────────────────
@@ -1095,9 +1148,8 @@ $('bJson').onclick = copiarJson;
 $('bPdf').onclick = () => generarPdf();
 $('bPdfDescargar').onclick = () => descargarPdf({ boton: $('bPdfDescargar') });
 $('selPeriodo').onchange = infoPeriodo;
-$('sBuscar').onclick = () => conectar(false, 'hid');
-$('sBuscarSerie').onclick = () => conectar(false, 'serie');
-$('sReintentarSerie').onclick = async () => { if (port || hidDev) await desconectar(); simple('desconectado'); conectar(false, 'serie'); };
+$('sBuscar').onclick = () => buscarMedidor();
+$('sOtroTipo').onclick = async () => { if (port || hidDev) await desconectar(); buscarMedidor([otroTipo]); };
 $('sLeer').onclick = descargar;
 const alGracias = () => { simple('gracias'); registrar('gracias'); };
 $('sPdf').onclick = () => descargarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, boton: $('sPdf'), alTerminar: alGracias });
@@ -1107,7 +1159,7 @@ $('sTerminar').onclick = async () => { if (port || hidDev) await desconectar(); 
 $('sNombre').oninput = e => guardarNombre(e.target.value);
 $('inNombre').oninput = e => guardarNombre(e.target.value);
 $('sOtraVez').onclick = async () => { await desconectar(); simple('desconectado'); };
-$('sReintentar').onclick = async () => { if (port || hidDev) await desconectar(); simple('desconectado'); conectar(false, ultimoTipo); };
+$('sReintentar').onclick = async () => { if (port || hidDev) await desconectar(); buscarMedidor(); };
 $('aTecnico').onclick = () => verVista(true);
 $('aSimple').onclick = () => verVista(false);
 $('bLimpiar').onclick = () => $('log').replaceChildren();
