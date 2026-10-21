@@ -8,7 +8,7 @@ promedio y mín–máx de cada día, porque el glucómetro no guarda si fue ante
 después de comer; el workflow de producción no se toca ni se llama). Todo pasa en el navegador:
 la página no manda datos a ningún servidor.
 
-Publicada en https://sechavarria-star.github.io/prodigy-lector-pages/
+Publicada en https://appmediciones.giwa-ia.com
 
 Protocolo: UART 9600 8N1 sobre cable Prolific PL2303, comandos de 1 byte
 (`0x58` número de serie, `0x05` mediciones). Detalle y script equivalente en
