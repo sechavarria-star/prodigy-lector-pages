@@ -5,8 +5,12 @@ Web Serial (Chrome / Edge de escritorio). Conecta, mantiene el medidor encendido
 descarga las mediciones, las exporta a CSV o JSON y genera un **reporte PDF por día**
 (`reporte.js`: mismo diseño que el reporte del bot de Mediciones en n8n, pero con
 promedio y mín–máx de cada día, porque el glucómetro no guarda si fue antes o
-después de comer; el workflow de producción no se toca ni se llama). Todo pasa en el navegador:
-la página no manda datos a ningún servidor.
+después de comer; el workflow de producción no se toca ni se llama). Las mediciones nunca
+salen del navegador. La página registra el **uso** (eventos como conectar, leer o
+generar el reporte) y datos del **equipo** (número de serie, tipo de cable, cuántas
+mediciones tiene y su rango de fechas) en la Edge Function `prodigy-med` de
+Supabase, sin valores de glucemia ni el nombre del paciente. El código de la base y
+de la función está en el repo `prodigy` (`lector/supabase/`).
 
 Publicada en https://appmediciones.giwa-ia.com
 

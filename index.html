@@ -245,7 +245,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <button id="bPdf" class="btn bp" disabled>Generar PDF</button>
       <span id="infoPdf" class="kpi-sub"></span>
     </div>
-    <p class="kpi-sub" style="margin-top:8px">Reporte por día: promedio, mínimo y máximo de cada día, con el detalle de cada medición. En el diálogo elegí <b>Guardar como PDF</b>. Se genera en este navegador: no se manda nada a ningún servidor.</p>
+    <p class="kpi-sub" style="margin-top:8px">Reporte por día: promedio, mínimo y máximo de cada día, con el detalle de cada medición. En el diálogo elegí <b>Guardar como PDF</b>. Se genera en este navegador: las mediciones no se mandan a ningún servidor.</p>
   </div>
 
   <div class="card">
@@ -286,6 +286,38 @@ const FIN_SERIE = [0x00, 0x9D, 0x9E];
 const FILTROS = [{ usbVendorId: 0x067B, usbProductId: 0x2303 }]; // Prolific PL2303
 
 const $ = id => document.getElementById(id);
+
+// ── registro de uso ──────────────────────────────────
+// Eventos de uso + datos del equipo (serie, cable, cuántas mediciones tiene y su rango
+// de fechas) a la Edge Function prodigy-med → Giwa_Database, schema prodigy_med.
+// NUNCA se mandan valores de glucemia ni el nombre del paciente. Si falla, no pasa nada.
+const API_USO = 'https://ofhiogczijhzkuqdjwvz.supabase.co/functions/v1/prodigy-med';
+const SESION = crypto.randomUUID();
+const DEMO = new URLSearchParams(location.search).has('demo');
+let cableTipo = null;
+
+function entorno() {
+  const ua = navigator.userAgent;
+  const nav = /Edg\/(\d+)/.exec(ua) ? 'Edge ' + /Edg\/(\d+)/.exec(ua)[1]
+    : /Chrome\/(\d+)/.exec(ua) ? 'Chrome ' + /Chrome\/(\d+)/.exec(ua)[1]
+    : /Firefox\/(\d+)/.exec(ua) ? 'Firefox ' + /Firefox\/(\d+)/.exec(ua)[1]
+    : /Safari\//.test(ua) ? 'Safari' : 'Otro';
+  const so = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /CrOS/.test(ua) ? 'ChromeOS'
+    : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : 'Otro';
+  return { navegador: nav, sistema: so };
+}
+
+function registrar(evento, detalle = {}) {
+  if (DEMO) return;
+  const cuerpo = {
+    sesion: SESION, evento, serie: serie || null, cable: cableTipo,
+    vista: $('vistaSimple')?.hidden ? 'tecnica' : 'simple', ...entorno(), detalle,
+  };
+  try {
+    fetch(API_USO, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(cuerpo), keepalive: true })
+      .catch(() => {});
+  } catch {}
+}
 
 // Logo del reporte: data URI para que ya esté cargado cuando se imprime el iframe.
 let LOGO_SRC = '';
@@ -333,23 +365,27 @@ async function conectar(automatico = false) {
     else port = await navigator.serial.requestPort({ filters: FILTROS });
     simple('conectando');
     await port.open({ baudRate: BAUD, dataBits: 8, parity: 'none', stopBits: 1 });
+    const info = port.getInfo();
+    cableTipo = info.usbVendorId === 0x067B ? 'serie_pl2303' : info.usbVendorId ? `usb_${info.usbVendorId.toString(16)}_${(info.usbProductId || 0).toString(16)}` : 'serie';
     writer = port.writable.getWriter();
     leerSiempre();
     log('in', `puerto abierto a ${BAUD} baudios`);
     await espera(500); // el cable se alimenta de DTR/RTS
     ui(true);
-    await leerSerie();
+    if (await leerSerie()) registrar('conectado');
   } catch (e) {
     if (e.name === 'NotFoundError') {
       log('er', 'No se eligió ningún puerto. Si no aparece el selector, abrí la página en Chrome.'); estado('Sin puerto', 'xw');
       simple('error', 'No se eligió el medidor en la ventanita. Si no aparece en la lista, revisá que el cable esté enchufado a la computadora.');
+      registrar('error', { tipo: 'sin_puerto' });
     }
     else if (e.name === 'NetworkError' || e.name === 'InvalidStateError') {
       log('er', 'El puerto ya está abierto en otra pestaña u otro programa. Cerralo (o tocá Desconectar ahí) y reintentá.');
       estado('Puerto ocupado', 'xw');
       simple('error', 'El medidor está abierto en otra pestaña o ventana. Cerrá las otras pestañas de esta página y probá de nuevo.');
+      registrar('error', { tipo: 'puerto_ocupado' });
     }
-    else { log('er', e.message); estado('Error al conectar', 'xr'); simple('error', MSG_NO_RESPONDE); }
+    else { log('er', e.message); estado('Error al conectar', 'xr'); simple('error', MSG_NO_RESPONDE); registrar('error', { tipo: 'conexion', nombre: e.name }); }
     port = null;
   }
 }
@@ -421,7 +457,12 @@ async function leerSerie() {
     $('kSerie').textContent = serie; $('kpis').hidden = false;
     estado('Conectado · ' + serie, 'xg');
     if (fase !== 'listo') simple('conectado');
-  } catch (e) { log('er', e.message); estado('Sin respuesta', 'xw'); if (fase !== 'listo') simple('error', MSG_NO_RESPONDE); }
+    return true;
+  } catch (e) {
+    log('er', e.message); estado('Sin respuesta', 'xw');
+    if (fase !== 'listo') { simple('error', MSG_NO_RESPONDE); registrar('error', { tipo: 'no_responde_serie' }); }
+    return false;
+  }
 }
 
 async function descargar() {
@@ -447,7 +488,9 @@ async function descargar() {
     pararPing(); $('chkMantener').checked = false;
     estado(`Descargado · ${mediciones.length} mediciones`, 'xb');
     pintarSimple(); simple('listo');
-  } catch (e) { log('er', e.message); estado('Error en la descarga', 'xr'); simple('error', MSG_NO_RESPONDE); }
+    const fechas = mediciones.map(m => m.fecha).sort();
+    registrar('lectura', { cantidad: mediciones.length, desde: fechas[0] || null, hasta: fechas.at(-1) || null, unidad: mediciones[0]?.unidad || null });
+  } catch (e) { log('er', e.message); estado('Error en la descarga', 'xr'); simple('error', MSG_NO_RESPONDE); registrar('error', { tipo: 'descarga' }); }
 }
 
 async function enviarManual() {
@@ -575,6 +618,7 @@ function generarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value, alTe
     alTerminar?.();
   }, 300);
   log('in', `reporte PDF: ${rows.length} mediciones`);
+  registrar('reporte_pdf', { mediciones: rows.length, dias: new Set(rows.map(r => r.fecha_medicion)).size });
 }
 
 const DIAS_L = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -642,6 +686,7 @@ if (new URLSearchParams(location.search).has('demo')) {
 
 if (!('serial' in navigator)) { $('sinSoporte').hidden = false; $('bConectar').disabled = true; simple('sinSoporte'); }
 else if (fase === 'desconectado') simple('desconectado');
+registrar('pagina_abierta', { soporta_serial: 'serial' in navigator });
 // Al abrir la página o enchufar el cable, conecta solo si el puerto ya estaba autorizado.
 navigator.serial?.addEventListener('connect', () => conectar(true));
 if ('serial' in navigator && !new URLSearchParams(location.search).has('demo')) conectar(true);
@@ -660,7 +705,7 @@ $('bPdf').onclick = generarPdf;
 $('selPeriodo').onchange = infoPeriodo;
 $('sBuscar').onclick = () => conectar();
 $('sLeer').onclick = descargar;
-$('sPdf').onclick = () => generarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, alTerminar: () => simple('gracias') });
+$('sPdf').onclick = () => generarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, alTerminar: () => { simple('gracias'); registrar('gracias'); } });
 $('sOtraVezPdf').onclick = () => simple('listo');
 $('sTerminar').onclick = async () => { if (port) await desconectar(); fase = 'desconectado'; simple('desconectado'); };
 $('sNombre').oninput = e => guardarNombre(e.target.value);
