@@ -663,6 +663,9 @@ async function conectarHid(soloAutorizado, conSelector) {
     }
     dev.oninputreport = e => recibirHid(new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength));
     cableTipo = hidV6 ? 'hid_v6' : 'hid_v7';
+    // Si se le habla apenas aparece, a veces todavía no está listo y hay que reenchufarlo
+    // (se vio en Mac con la app, 21/10/2026): se le da un momento antes del primer comando.
+    await espera(1200);
     ui(true);
     if (await leerSerie()) {
       registrar('conectado');
