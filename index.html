@@ -167,6 +167,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
     <section class="panel" data-fase="conectando" hidden>
       <h2 id="sConectandoT">Buscando el medidor…</h2>
       <p id="sConectandoP">Esperá unos segundos.</p>
+      <button class="bsec" id="sCableAparte" hidden>Mi medidor tiene un cable aparte</button>
     </section>
 
     <section class="panel" data-fase="conectado" hidden>
@@ -452,7 +453,7 @@ function estado(txt, cls) { const e = $('estado'); e.textContent = txt; e.classN
 // Una fase a la vez: sinSoporte · desconectado · conectando · conectado · descargando · listo · gracias · error
 let fase = 'desconectado';
 function simple(f, msgError) {
-  if (f === 'conectando' && fase !== 'conectando') { $('sConectandoT').textContent = 'Buscando el medidor…'; $('sConectandoP').textContent = 'Esperá unos segundos.'; }
+  if (f === 'conectando' && fase !== 'conectando') { $('sConectandoT').textContent = 'Buscando el medidor…'; $('sConectandoP').textContent = 'Esperá unos segundos.'; $('sCableAparte').hidden = true; }
   fase = f;
   $('sOtroTipo').hidden = true; // solo lo muestra buscarMedidor() cuando hace falta
   document.querySelectorAll('#vistaSimple [data-fase]').forEach(el => el.hidden = el.dataset.fase !== f);
@@ -522,20 +523,26 @@ const APP_MAC = 'http://127.0.0.1:47823';
 
 async function appMacEstado() {
   try {
-    const r = await fetch(APP_MAC + '/estado', { signal: AbortSignal.timeout(1500) });
+    // Si la app no está, falla al instante (conexión rechazada). El tiempo largo es para que
+    // el usuario alcance a aceptar el permiso de "red local" que Chrome pide la primera vez.
+    const r = await fetch(APP_MAC + '/estado', { signal: AbortSignal.timeout(30000) });
     return r.ok ? await r.json() : null;
   } catch { return null; }
 }
 
+let pedidoApp = 0;
 async function leerConApp() {
+  const mio = ++pedidoApp;
   simple('conectando');
   $('sConectandoT').textContent = 'Enchufá el medidor';
+  $('sCableAparte').hidden = false;
   $('sConectandoP').textContent = 'Conectá el cable para que la pantalla muestre Lnk. La app Lector Prodigy lo lee sola: esperá unos segundos.';
   estado('Esperando la app de Mac…', 'xt');
   log('in', 'leyendo con la app Lector Prodigy (Mac)');
   try {
     const r = await fetch(APP_MAC + '/leer', { method: 'POST', body: JSON.stringify({ esperar: 60 }), signal: AbortSignal.timeout(75000) });
     const j = await r.json();
+    if (mio !== pedidoApp || fase !== 'conectando') return;   // el usuario cambió de camino
     if (!j.ok) {
       log('er', 'app de Mac: ' + j.error);
       simple('error', j.error === 'sin_medidor'
@@ -552,6 +559,7 @@ async function leerConApp() {
     log('in', `app de Mac: ${res.porIndice.size} mediciones · ${res.bloques} bloque(s) · ${res.bytes} bytes`);
     finalizarLectura(new Map(res.porIndice), faltantes(res.porIndice), 1, res);
   } catch (e) {
+    if (mio !== pedidoApp || fase !== 'conectando') return;
     log('er', 'app de Mac: ' + e.name + ' ' + e.message);
     simple('error', 'No pudimos hablar con la app Lector Prodigy. Fijate que esté abierta (ícono de gota arriba a la derecha) y, si Chrome pregunta, permití el acceso a la red local.');
     registrar('error', { tipo: 'app_mac', detalle: e.name });
@@ -587,8 +595,7 @@ async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie'
   let app = null;
   if (ES_MAC && orden.length > 1) {
     app = await appMacEstado();
-    if (app?.ok && (app.disponible || app.conectado)) return leerConApp();
-    if (app?.ok) orden = ['serie'];
+    if (app?.ok) return leerConApp();   // con la app instalada: directo a "Enchufá el medidor"
   }
   orden = orden.filter(t => t === 'hid' ? 'hid' in navigator : 'serial' in navigator);
   for (let i = 0; i < orden.length; i++) {
@@ -609,7 +616,6 @@ async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie'
       return;
     }
   }
-  if (app?.ok) return leerConApp();
   sinMedidor();
 }
 
@@ -1201,6 +1207,7 @@ navigator.serial?.addEventListener('disconnect', e => { if (e.target === port) {
 $('bConectar').onclick = () => conectar(false, 'serie');
 $('bConectarHid').onclick = () => conectar(false, 'hid');
 $('bConectarApp').onclick = () => leerConApp();
+$('sCableAparte').onclick = () => { pedidoApp++; simple('desconectado'); buscarMedidor(['serie']); };
 if (ES_MAC) $('bConectarApp').hidden = false;
 $('bDesconectar').onclick = desconectar;
 $('bSerie').onclick = leerSerie;
