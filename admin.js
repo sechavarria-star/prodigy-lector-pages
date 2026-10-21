@@ -56,6 +56,7 @@
       });
       const j = await r.json().catch(() => ({}));
       if (r.status === 401) { guardarClave(''); mostrarLogin('Clave incorrecta.'); return; }
+      if (r.status === 429) { guardarClave(''); mostrarLogin('Demasiados intentos con clave incorrecta. Esperá 15 minutos y probá de nuevo.'); return; }
       if (!r.ok || !j.ok) throw new Error(j.error || r.status);
       $('admLogin').hidden = true; $('admPanel').hidden = false;
       pintar(j.datos);
