@@ -686,7 +686,8 @@ async function leerSerie() {
   try {
     const r = await comando([READ_SERIAL]);
     let fin = r.findIndex((b, i) => i > 0 && FIN_SERIE.includes(b)); if (fin < 0) fin = r.length;
-    serie = String.fromCharCode(...r.slice(r[0] < 0x20 ? 1 : 0, fin)).trim();
+    // Solo caracteres imprimibles: el modelo HID manda la serie con bytes nulos.
+    serie = String.fromCharCode(...r.slice(r[0] < 0x20 ? 1 : 0, fin)).replace(/[^\x20-\x7e]/g, '').trim();
     $('kSerie').textContent = serie; $('kpis').hidden = false;
     estado('Conectado · ' + serie, 'xg');
     if (fase !== 'listo') simple('conectado');
