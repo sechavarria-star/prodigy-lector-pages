@@ -410,7 +410,7 @@ function entorno() {
 function registrar(evento, detalle = {}) {
   if (DEMO) return;
   const cuerpo = {
-    sesion: SESION, evento, serie: serie || null, cable: cableTipo,
+    sesion: SESION, evento, serie: (serie || '').replace(/[^0-9A-Za-z._-]/g, '').slice(0, 40) || null, cable: cableTipo,
     vista: $('vistaSimple')?.hidden ? 'tecnica' : 'simple', ...entorno(), detalle,
   };
   try {
