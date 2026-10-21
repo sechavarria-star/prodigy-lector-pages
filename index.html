@@ -186,6 +186,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <div class="valor-big" id="sValor">—</div>
       <div id="sFecha" style="font-size:19px"></div>
       <span class="etiqueta" id="sEtiqueta"></span>
+      <div class="error-big" id="sIncompleta" hidden></div>
       <div class="resumen" id="sResumen"></div>
       <label class="campo" for="sNombre">Tu nombre (aparece en el reporte)</label>
       <input class="input-big" id="sNombre" autocomplete="name" placeholder="Nombre y apellido">
@@ -702,31 +703,75 @@ async function leerSerie() {
   }
 }
 
+// Interpreta la respuesta de 0x05. Junta el texto de TODOS los bloques STX…ETX (no solo el
+// primero), descarta renglones mal formados y cuenta los índices que faltan: cada medición
+// trae su número de orden (1 = la más reciente), así que un hueco = paquetes perdidos.
+const RENGLON = /^(\d+),(\d{4}),(\d{1,2}),(\d{1,2}),(\d{1,2}),(\d{1,2}),(\d+(?:\.\d+)?|Hi\.|Lo\.),(mg_dL|mmol_L)$/;
+function interpretar(r) {
+  let bloques = 0, texto = '', dentro = false;
+  for (const b of r) {
+    if (b === STX) { dentro = true; bloques++; texto += '\r\n'; continue; }
+    if (b === ETX) { dentro = false; continue; }
+    if (dentro) texto += String.fromCharCode(b);
+  }
+  const p = n => String(n).padStart(2, '0');
+  const porIndice = new Map(); let corruptas = 0;
+  for (const l of texto.split(/\r?\n/)) {
+    if (!l.trim()) continue;
+    const m = RENGLON.exec(l.trim());
+    if (!m) { corruptas++; continue; }
+    const [, idx, a, me, d, h, mi, valor, u] = m;
+    const unidad = u === 'mg_dL' ? 'mg/dL' : 'mmol/L';
+    const fuera = { 'Hi.': 'alto', 'Lo.': 'bajo' }[valor] || null;
+    porIndice.set(+idx, {
+      indice: +idx, fecha: `${a}-${p(me)}-${p(d)}`, hora: `${p(h)}:${p(mi)}`,
+      valor: fuera ? null : unidad === 'mmol/L' ? parseFloat(valor) : parseInt(valor, 10),
+      unidad, fuera_de_rango: fuera,
+    });
+  }
+  return { porIndice, bloques, corruptas, bytes: r.length };
+}
+function faltantes(porIndice) {
+  const max = Math.max(0, ...porIndice.keys());
+  return max - porIndice.size; // índices de 1..max que no llegaron
+}
+
 async function descargar() {
   try {
     estado('Descargando…', 'xt'); simple('descargando');
     const r = await comando([READ_RECORDS]);
-    const ini = r.indexOf(STX), fin = r.indexOf(ETX);
-    if (ini < 0 || fin < 0) throw new Error('Respuesta sin STX/ETX: no la pude interpretar');
-    const texto = String.fromCharCode(...r.slice(ini + 1, fin));
-    mediciones = texto.split('\r\n').filter(Boolean).map(l => {
-      const [idx, a, m, d, h, mi, valor, u] = l.split(',');
-      const unidad = u === 'mg_dL' ? 'mg/dL' : 'mmol/L';
-      const fuera = { 'Hi.': 'alto', 'Lo.': 'bajo' }[valor] || null;
-      const p = n => String(n).padStart(2, '0');
-      return {
-        indice: +idx, fecha: `${a}-${p(m)}-${p(d)}`, hora: `${p(h)}:${p(mi)}`,
-        valor: fuera ? null : unidad === 'mmol/L' ? parseFloat(valor) : parseInt(valor, 10),
-        unidad, fuera_de_rango: fuera,
-      };
-    });
-    log('in', `${mediciones.length} mediciones · fin de sesión (ETX EOT)`);
+    if (r.indexOf(STX) < 0 || r.indexOf(ETX) < 0) throw new Error('Respuesta sin STX/ETX: no la pude interpretar');
+    const res = interpretar(r);
+    const juntas = new Map(res.porIndice);
+    let intentos = 1, falta = faltantes(juntas);
+    log('in', `lectura 1: ${res.porIndice.size} mediciones · ${res.bloques} bloque(s) · ${res.bytes} bytes · faltan ${falta} · renglones dañados ${res.corruptas}`);
+    // Si faltan mediciones, se pide de nuevo (hasta 2 veces más) y se completan los huecos
+    // con las otras lecturas: cada medición tiene su índice, así que se pueden juntar.
+    while ((falta > 0 || res.corruptas > 0) && intentos < 3) {
+      intentos++;
+      let otra;
+      try { otra = await comando([READ_RECORDS], { intentos: 1 }); } catch { log('in', 'el medidor no respondió a otra lectura'); break; }
+      if (otra.indexOf(STX) < 0) break;
+      const r2 = interpretar(otra);
+      for (const [k, v] of r2.porIndice) if (!juntas.has(k)) juntas.set(k, v);
+      falta = faltantes(juntas);
+      log('in', `lectura ${intentos}: ${r2.porIndice.size} mediciones · ${r2.bloques} bloque(s) · ${r2.bytes} bytes · faltan ${falta} después de juntar`);
+    }
+    mediciones = [...juntas.values()].sort((a, b) => a.indice - b.indice);
+    const incompleta = falta > 0;
+    log(incompleta ? 'er' : 'in', `${mediciones.length} mediciones${incompleta ? ` · INCOMPLETA: faltan ${falta}` : ' · completa'} · fin de sesión`);
     pintar();
     pararPing(); $('chkMantener').checked = false;
-    estado(`Descargado · ${mediciones.length} mediciones`, 'xb');
+    estado(incompleta ? `Incompleta · faltan ${falta}` : `Descargado · ${mediciones.length} mediciones`, incompleta ? 'xw' : 'xb');
+    $('sIncompleta').hidden = !incompleta;
+    $('sIncompleta').textContent = incompleta
+      ? `Ojo: la lectura quedó incompleta (faltan ${falta} mediciones). Desenchufá el medidor, volvé a enchufarlo y leé de nuevo antes de llevarle el reporte al médico.`
+      : '';
     pintarSimple(); simple('listo');
     const fechas = mediciones.map(m => m.fecha).sort();
-    registrar('lectura', { cantidad: mediciones.length, desde: fechas[0] || null, hasta: fechas.at(-1) || null, unidad: mediciones[0]?.unidad || null });
+    registrar('lectura', { cantidad: mediciones.length, desde: fechas[0] || null, hasta: fechas.at(-1) || null, unidad: mediciones[0]?.unidad || null,
+      faltan: falta, lecturas: intentos, bloques: res.bloques, bytes: res.bytes, danadas: res.corruptas });
+    if (incompleta) registrar('error', { tipo: 'lectura_incompleta', faltan: falta });
   } catch (e) { log('er', e.message); estado('Error en la descarga', 'xr'); simple('error', MSG_NO_RESPONDE); registrar('error', { tipo: 'descarga' }); }
 }
 
@@ -1058,6 +1103,6 @@ $('aTecnico').onclick = () => verVista(true);
 $('aSimple').onclick = () => verVista(false);
 $('bLimpiar').onclick = () => $('log').replaceChildren();
 </script>
-<script src="admin.js?v=20261021c"></script>
+<script src="admin.js?v=20261021d"></script>
 </body>
 </html>

@@ -13,7 +13,7 @@
     reporte_pdf: 'Generó el reporte', gracias: 'Llegó al final', error: 'Error' };
   const ERRORES = { sin_puerto: 'No eligió el medidor', puerto_ocupado: 'Puerto ocupado', no_responde_serie: 'El medidor no responde',
     descarga: 'Falló la lectura', conexion: 'Error al conectar', sin_hid: 'No eligió el medidor (USB integrado)',
-    conexion_hid: 'Error al conectar (USB integrado)', pdf_descarga: 'Falló la descarga del PDF', otro: 'Otro' };
+    conexion_hid: 'Error al conectar (USB integrado)', pdf_descarga: 'Falló la descarga del PDF', lectura_incompleta: 'Lectura incompleta', otro: 'Otro' };
   let dias = 30, cargando = false;
 
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -108,7 +108,7 @@
 
     $('admUltimos').innerHTML = (d.ultimos || []).length
       ? d.ultimos.map(u => {
-          const det = u.evento === 'lectura' ? `${num(u.detalle?.cantidad)} mediciones`
+          const det = u.evento === 'lectura' ? `${num(u.detalle?.cantidad)} mediciones${u.detalle?.faltan ? ` · faltan ${num(u.detalle.faltan)}` : ''}`
             : u.evento === 'reporte_pdf' ? `${num(u.detalle?.mediciones)} mediciones · ${num(u.detalle?.dias)} días`
             : u.evento === 'error' ? (ERRORES[u.detalle?.tipo] || u.detalle?.tipo || '') : '';
           const cls = u.evento === 'error' ? 'xw' : u.evento === 'reporte_pdf' || u.evento === 'gracias' ? 'xg' : u.evento === 'lectura' ? 'xt' : 'xb';
