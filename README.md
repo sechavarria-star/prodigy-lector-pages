@@ -26,3 +26,6 @@ manual, el keep-alive y la tabla están en el **modo técnico** (link al pie, o
 navegador.
 
 Para probar sin medidor: `?demo` carga mediciones ficticias.
+
+**Dashboard de uso:** `#modoadmin` al final de la URL. Pide la clave de administrador,
+que se valida en el servidor (este repo no tiene nada secreto). Código en `admin.js`.
