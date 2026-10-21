@@ -287,7 +287,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <span id="infoWa" class="kpi-sub"></span>
       <span id="infoPdf" class="kpi-sub"></span>
     </div>
-    <p class="kpi-sub" style="margin-top:8px">Reporte para el diabetólogo: resumen con HbA1c estimada y tiempo en rango 70–180, evolución por día, día modal de 24 h y bitácora por horario. <b>Descargar PDF</b> lo guarda directo (como imagen); <b>Imprimir</b> abre el diálogo, donde también se puede elegir <b>Guardar como PDF</b> (con texto seleccionable). Se genera en este navegador: las mediciones no se mandan a ningún servidor.</p>
+    <p class="kpi-sub" style="margin-top:8px">Reporte para el diabetólogo: resumen con HbA1c estimada y tiempo en rango 70–180, evolución por día, día modal de 24 h y bitácora por horario. <b>Descargar PDF</b> lo guarda directo (como imagen); <b>Imprimir</b> abre el diálogo, donde también se puede elegir <b>Guardar como PDF</b> (con texto seleccionable). Se genera en este navegador: las mediciones no se mandan a ningún servidor, salvo que elijas <b>Enviar por WhatsApp</b>; en ese caso el PDF pasa por nuestro servidor solo para entregarlo y no se guarda.</p>
   </div>
 
   <div class="card">
@@ -1172,7 +1172,7 @@ async function prepararPdf(rep, nombre) {
 
 // Envío por WhatsApp: la página arma el PDF (igual que la descarga directa) y lo manda a la
 // Edge Function, que valida el número y los límites y se lo pasa a n8n, que lo envía con la
-// plantilla `reporte_mediciones` desde la línea de Mediciones. Ni el número ni el PDF se guardan.
+// plantilla `reporte_mediciones_esp` desde la línea de Mediciones. Ni el número ni el PDF se guardan.
 const WA_KEY = 'lector-autocode:whatsapp';
 const ERRORES_WA = {
   numero_invalido: 'Revisá el número: código de área y número, sin 0 ni 15 (por ejemplo 11 2345 6789).',
