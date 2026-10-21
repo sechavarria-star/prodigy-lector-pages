@@ -165,8 +165,8 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
     </section>
 
     <section class="panel" data-fase="conectando" hidden>
-      <h2>Buscando el medidor…</h2>
-      <p>Esperá unos segundos.</p>
+      <h2 id="sConectandoT">Buscando el medidor…</h2>
+      <p id="sConectandoP">Esperá unos segundos.</p>
     </section>
 
     <section class="panel" data-fase="conectado" hidden>
@@ -227,6 +227,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
     <div class="acciones">
       <button id="bConectar" class="btn bp">Conectar (cable serie)</button>
       <button id="bConectarHid" class="btn bp">Conectar (USB integrado · HID)</button>
+      <button id="bConectarApp" class="btn bp" hidden>Leer con la app de Mac</button>
       <button id="bDesconectar" class="btn bg" disabled>Desconectar</button>
       <label class="sw"><input type="checkbox" id="chkMantener" disabled> Mantener encendido (ping cada 10 s)</label>
       <span id="ping" class="bx xm" hidden></span>
@@ -451,6 +452,7 @@ function estado(txt, cls) { const e = $('estado'); e.textContent = txt; e.classN
 // Una fase a la vez: sinSoporte · desconectado · conectando · conectado · descargando · listo · gracias · error
 let fase = 'desconectado';
 function simple(f, msgError) {
+  if (f === 'conectando' && fase !== 'conectando') { $('sConectandoT').textContent = 'Buscando el medidor…'; $('sConectandoP').textContent = 'Esperá unos segundos.'; }
   fase = f;
   $('sOtroTipo').hidden = true; // solo lo muestra buscarMedidor() cuando hace falta
   document.querySelectorAll('#vistaSimple [data-fase]').forEach(el => el.hidden = el.dataset.fase !== f);
@@ -511,6 +513,51 @@ async function conectar(automatico = false, tipo = 'auto') {
   }
 }
 
+// ── App "Lector Prodigy" para Mac ────────────────────
+// En Mac el modelo con USB integrado no se puede leer desde el navegador (macOS no le asigna
+// el driver HID). La app de barra de menú lo lee por USB directo apenas se enchufa y se lo
+// pasa a la página por http://127.0.0.1:47823 (repo prodigy-lector-mac). Solo se consulta
+// cuando el usuario toca un botón: Chrome puede pedir permiso para acceder a la red local.
+const APP_MAC = 'http://127.0.0.1:47823';
+
+async function appMacEstado() {
+  try {
+    const r = await fetch(APP_MAC + '/estado', { signal: AbortSignal.timeout(1500) });
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
+
+async function leerConApp() {
+  simple('conectando');
+  $('sConectandoT').textContent = 'Enchufá el medidor';
+  $('sConectandoP').textContent = 'Conectá el cable para que la pantalla muestre Lnk. La app Lector Prodigy lo lee sola: esperá unos segundos.';
+  estado('Esperando la app de Mac…', 'xt');
+  log('in', 'leyendo con la app Lector Prodigy (Mac)');
+  try {
+    const r = await fetch(APP_MAC + '/leer', { method: 'POST', body: JSON.stringify({ esperar: 60 }), signal: AbortSignal.timeout(75000) });
+    const j = await r.json();
+    if (!j.ok) {
+      log('er', 'app de Mac: ' + j.error);
+      simple('error', j.error === 'sin_medidor'
+        ? 'No apareció el medidor. Enchufalo para que la pantalla muestre Lnk y tocá "Probar de nuevo".'
+        : 'La app no pudo leer el medidor. Desenchufalo, volvé a enchufarlo y probá de nuevo.');
+      registrar('error', { tipo: 'app_mac', detalle: String(j.error).slice(0, 60) });
+      return;
+    }
+    serie = String(j.serie || '').replace(/[^\x20-\x7e]/g, '').trim();
+    $('kSerie').textContent = serie; $('kpis').hidden = false;
+    cableTipo = 'mac_app';
+    registrar('conectado');
+    const res = interpretar(j.registros || []);
+    log('in', `app de Mac: ${res.porIndice.size} mediciones · ${res.bloques} bloque(s) · ${res.bytes} bytes`);
+    finalizarLectura(new Map(res.porIndice), faltantes(res.porIndice), 1, res);
+  } catch (e) {
+    log('er', 'app de Mac: ' + e.name + ' ' + e.message);
+    simple('error', 'No pudimos hablar con la app Lector Prodigy. Fijate que esté abierta (ícono de gota arriba a la derecha) y, si Chrome pregunta, permití el acceso a la red local.');
+    registrar('error', { tipo: 'app_mac', detalle: e.name });
+  }
+}
+
 // ── Búsqueda automática ──────────────────────────────
 // El navegador no deja ver qué hay enchufado sin permiso, y cada ventanita de permiso es de
 // un tipo (USB integrado = WebHID, cable aparte = Web Serial). Se abre primero la más
@@ -535,6 +582,14 @@ async function elegir(tipo) {
 
 async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie']) {
   if (port || hidDev) return;
+  // Mac con la app instalada: si ya leyó (o el medidor está enchufado), se usa la app;
+  // si no, se prueba el cable aparte y, si no se elige nada, se espera a la app.
+  let app = null;
+  if (ES_MAC && orden.length > 1) {
+    app = await appMacEstado();
+    if (app?.ok && (app.disponible || app.conectado)) return leerConApp();
+    if (app?.ok) orden = ['serie'];
+  }
   orden = orden.filter(t => t === 'hid' ? 'hid' in navigator : 'serial' in navigator);
   for (let i = 0; i < orden.length; i++) {
     const tipo = orden[i];
@@ -554,12 +609,13 @@ async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie'
       return;
     }
   }
+  if (app?.ok) return leerConApp();
   sinMedidor();
 }
 
 function sinMedidor() {
   simple('error', ES_MAC
-    ? 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido. Si tu medidor tiene el USB integrado (sin cable aparte), en computadoras Mac no se puede leer desde el navegador: usá una PC con Windows.'
+    ? 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido. Si tu medidor tiene el USB integrado (sin cable aparte), en Mac hace falta la app Lector Prodigy, o usá una PC con Windows.'
     : 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido (que muestre Lnk o PC) y probá de nuevo.');
   registrar('error', { tipo: 'sin_medidor', mac: ES_MAC });
 }
@@ -812,6 +868,12 @@ async function descargar() {
       falta = faltantes(juntas);
       log('in', `lectura ${intentos}: ${r2.porIndice.size} mediciones · ${r2.bloques} bloque(s) · ${r2.bytes} bytes · faltan ${falta} después de juntar`);
     }
+    finalizarLectura(juntas, falta, intentos, res);
+  } catch (e) { log('er', e.message); estado('Error en la descarga', 'xr'); simple('error', MSG_NO_RESPONDE); registrar('error', { tipo: 'descarga' }); }
+}
+
+// Muestra y registra una lectura ya interpretada (la usan el USB directo y la app de Mac).
+function finalizarLectura(juntas, falta, intentos, res) {
     mediciones = [...juntas.values()].sort((a, b) => a.indice - b.indice);
     const incompleta = falta > 0;
     log(incompleta ? 'er' : 'in', `${mediciones.length} mediciones${incompleta ? ` · INCOMPLETA: faltan ${falta}` : ' · completa'} · fin de sesión`);
@@ -827,7 +889,6 @@ async function descargar() {
     registrar('lectura', { cantidad: mediciones.length, desde: fechas[0] || null, hasta: fechas.at(-1) || null, unidad: mediciones[0]?.unidad || null,
       faltan: falta, lecturas: intentos, bloques: res.bloques, bytes: res.bytes, danadas: res.corruptas });
     if (incompleta) registrar('error', { tipo: 'lectura_incompleta', faltan: falta });
-  } catch (e) { log('er', e.message); estado('Error en la descarga', 'xr'); simple('error', MSG_NO_RESPONDE); registrar('error', { tipo: 'descarga' }); }
 }
 
 async function enviarManual() {
@@ -1139,6 +1200,8 @@ navigator.serial?.addEventListener('disconnect', e => { if (e.target === port) {
 
 $('bConectar').onclick = () => conectar(false, 'serie');
 $('bConectarHid').onclick = () => conectar(false, 'hid');
+$('bConectarApp').onclick = () => leerConApp();
+if (ES_MAC) $('bConectarApp').hidden = false;
 $('bDesconectar').onclick = desconectar;
 $('bSerie').onclick = leerSerie;
 $('bDescargar').onclick = descargar;

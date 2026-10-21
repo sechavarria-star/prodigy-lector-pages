@@ -20,7 +20,9 @@ Dos modelos de conexión, mismo protocolo (comandos de 1 byte: `0x58` número de
 - **Cable aparte** (Prolific PL2303 `067B:2303`): Web Serial, UART 9600 8N1. Probado con un medidor real.
 - **USB integrado** (HID; V6 eBiologic `8E14:0900`, V7 `04D9:B564`): WebHID, protocolo del driver de
   Tidepool. **Probado en Windows con un medidor real (21/10/2026)**; **en macOS no funciona**: el sistema no le asigna el driver
-  HID a este equipo (verificado 21/10/2026), así que Chrome no lo ve. Detalle y script equivalente en
+  HID a este equipo (verificado 21/10/2026), así que Chrome no lo ve. Para Mac está la app
+  **Lector Prodigy** (repo local `prodigy-lector-mac`): lo lee por USB directo y la página la usa
+  por `http://127.0.0.1:47823`. Detalle y script equivalente en
 Python en el repo `prodigy` (`scripts/leer_autocode.py`). Basado en el driver
 open source de [Tidepool Uploader](https://github.com/tidepool-org/uploader).
 
