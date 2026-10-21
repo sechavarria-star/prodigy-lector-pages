@@ -2,7 +2,7 @@
 
 Página estática que lee un glucómetro **Prodigy AutoCode** por cable USB usando
 Web Serial (Chrome / Edge de escritorio). Conecta, mantiene el medidor encendido,
-descarga las mediciones, las exporta a CSV o JSON y genera un **reporte PDF por día**
+descarga las mediciones, las exporta a CSV o JSON y genera un **reporte PDF por día** (descarga directa con html2pdf.js, o imprimir)
 (`reporte.js`: mismo diseño que el reporte del bot de Mediciones en n8n, pero con
 promedio y mín–máx de cada día, porque el glucómetro no guarda si fue antes o
 después de comer; el workflow de producción no se toca ni se llama). Las mediciones nunca
@@ -29,3 +29,5 @@ Para probar sin medidor: `?demo` carga mediciones ficticias.
 
 **Dashboard de uso:** `#modoadmin` al final de la URL. Pide la clave de administrador,
 que se valida en el servidor (este repo no tiene nada secreto). Código en `admin.js`.
+
+Al cambiar `reporte.js` o `admin.js`, subir el `?v=` con que los carga `index.html`.

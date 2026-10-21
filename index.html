@@ -189,7 +189,8 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <label class="campo" for="sNombre">Tu nombre (aparece en el reporte)</label>
       <input class="input-big" id="sNombre" autocomplete="name" placeholder="Nombre y apellido">
       <button class="bgrande" id="sPdf">Descargar reporte para el médico</button>
-      <p class="nota" style="margin-top:14px">Se abre una ventana: elegí <b>Guardar como PDF</b> y tocá <b>Guardar</b>.</p>
+      <p class="nota" id="sPdfNota" style="margin-top:14px">El reporte se guarda solo, en la carpeta <b>Descargas</b> de la computadora.</p>
+      <button class="bsec" id="sImprimir">Imprimir el reporte</button>
       <button class="bsec" id="sOtraVez">Leer de nuevo</button>
     </section>
 
@@ -266,10 +267,11 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
           <option value="365">Último año</option>
           <option value="0">Todas</option>
         </select></div>
-      <button id="bPdf" class="btn bp" disabled>Generar PDF</button>
+      <button id="bPdfDescargar" class="btn bp" disabled>Descargar PDF</button>
+      <button id="bPdf" class="btn bg" disabled>Imprimir</button>
       <span id="infoPdf" class="kpi-sub"></span>
     </div>
-    <p class="kpi-sub" style="margin-top:8px">Reporte por día: promedio, mínimo y máximo de cada día, con el detalle de cada medición. En el diálogo elegí <b>Guardar como PDF</b>. Se genera en este navegador: las mediciones no se mandan a ningún servidor.</p>
+    <p class="kpi-sub" style="margin-top:8px">Reporte por día: promedio, mínimo y máximo de cada día, con el detalle de cada medición. <b>Descargar PDF</b> lo guarda directo (como imagen); <b>Imprimir</b> abre el diálogo, donde también se puede elegir <b>Guardar como PDF</b> (con texto seleccionable). Se genera en este navegador: las mediciones no se mandan a ningún servidor.</p>
   </div>
 
   <div class="card">
@@ -362,7 +364,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
   </div>
 </div>
 
-<script src="reporte.js"></script>
+<script src="reporte.js?v=20261021"></script>
 <script>
 // Protocolo (ver scripts/leer_autocode.py): UART 9600 8N1, comandos de 1 byte.
 //   0x58 -> [largo] "51850-3754452" 0x9E
@@ -408,8 +410,20 @@ function registrar(evento, detalle = {}) {
 }
 
 // Logo del reporte: data URI para que ya esté cargado cuando se imprime el iframe.
+// Se pasa a PNG: html2canvas (descarga directa) no aplica el <style> interno del SVG y lo pinta negro.
 let LOGO_SRC = '';
-fetch('logo-prodigy.svg').then(r => r.ok ? r.text() : '').then(t => { if (t) LOGO_SRC = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(t); }).catch(() => {});
+fetch('logo-prodigy.svg').then(r => r.ok ? r.text() : '').then(t => {
+  if (!t) return;
+  LOGO_SRC = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(t);
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas'), alto = 128;
+    c.width = Math.round(alto * img.naturalWidth / img.naturalHeight) || 498; c.height = alto;
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    try { LOGO_SRC = c.toDataURL('image/png'); } catch {}
+  };
+  img.src = LOGO_SRC;
+}).catch(() => {});
 let port = null, reader = null, writer = null, rx = [], ocupado = Promise.resolve(), timerPing = null;
 let mediciones = [], serie = '';
 
@@ -640,7 +654,7 @@ function pintar() {
   $('kUnidad').textContent = mediciones[0]?.unidad || 'mg/dL';
   $('kUlt').textContent = mediciones[0] ? (mediciones[0].valor ?? mediciones[0].fuera_de_rango.toUpperCase()) : '—';
   $('kUltF').textContent = mediciones[0] ? `${mediciones[0].fecha} ${mediciones[0].hora}` : '—';
-  $('bCsv').disabled = $('bJson').disabled = $('bPdf').disabled = !mediciones.length;
+  $('bCsv').disabled = $('bJson').disabled = $('bPdf').disabled = $('bPdfDescargar').disabled = !mediciones.length;
   infoPeriodo();
 }
 
@@ -669,7 +683,7 @@ function infoPeriodo() {
   if (!mediciones.length) { $('infoPdf').textContent = ''; return; }
   const n = delPeriodo().filas.length;
   $('infoPdf').textContent = n ? `${n} mediciones en el período` : 'No hay mediciones en este período';
-  $('bPdf').disabled = !n;
+  $('bPdf').disabled = $('bPdfDescargar').disabled = !n;
 }
 
 // Vista simple: últimos 30 días; si no hay nada en ese lapso, todas.
@@ -678,9 +692,9 @@ function periodoSimple() {
   return p.filas.length ? { ...p, etiqueta: 'En los últimos 30 días' } : { ...delPeriodo(0), etiqueta: 'En total' };
 }
 
-function generarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value, alTerminar } = {}) {
+function armarReporte(periodo, nombre) {
   const { filas, desde } = periodo;
-  if (!filas.length) return;
+  if (!filas.length) return null;
   const rows = filas.map(m => ({
     fecha_medicion: m.fecha, hora_medicion: m.hora,
     valor: m.valor ?? (m.fuera_de_rango === 'alto' ? 'HI' : 'LO'),
@@ -695,18 +709,111 @@ function generarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value, alTe
     origen: `Datos descargados del glucómetro Prodigy AutoCode${serie ? ' · serie ' + serie : ''}`,
     logoSrc: LOGO_SRC,
   });
+  return { html, rows, detalle: { mediciones: rows.length, dias: new Set(rows.map(r => r.fecha_medicion)).size } };
+}
+
+// Imprimir: diálogo del navegador (ahí también está "Guardar como PDF", con texto seleccionable).
+function generarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value, alTerminar } = {}) {
+  const rep = armarReporte(periodo, nombre);
+  if (!rep) return;
   const fr = document.createElement('iframe');
   fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
   document.body.appendChild(fr);
-  fr.contentDocument.open(); fr.contentDocument.write(html); fr.contentDocument.close();
-  fr.onload = null;
+  fr.contentDocument.open(); fr.contentDocument.write(rep.html); fr.contentDocument.close();
   setTimeout(() => {
     fr.contentWindow.focus(); fr.contentWindow.print(); // en Chrome bloquea hasta que se cierra el diálogo
     setTimeout(() => fr.remove(), 60000);
     alTerminar?.();
   }, 300);
-  log('in', `reporte PDF: ${rows.length} mediciones`);
-  registrar('reporte_pdf', { mediciones: rows.length, dias: new Set(rows.map(r => r.fecha_medicion)).size });
+  log('in', `reporte PDF (imprimir): ${rep.rows.length} mediciones`);
+  registrar('reporte_pdf', { ...rep.detalle, modo: 'imprimir' });
+}
+
+// Descarga directa: html2pdf.js (html2canvas + jsPDF) arma el .pdf en el navegador, como
+// imagen A4 de alta resolución. Se carga recién cuando hace falta, con SRI.
+const HTML2PDF = { src: 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
+  sri: 'sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==' };
+let cargaHtml2pdf = null;
+function cargarHtml2pdf() {
+  if (window.html2pdf) return Promise.resolve();
+  return cargaHtml2pdf ||= new Promise((ok, mal) => {
+    const sc = document.createElement('script');
+    sc.src = HTML2PDF.src; sc.integrity = HTML2PDF.sri; sc.crossOrigin = 'anonymous'; sc.referrerPolicy = 'no-referrer';
+    sc.onload = ok; sc.onerror = () => { cargaHtml2pdf = null; mal(new Error('No se pudo cargar html2pdf')); };
+    document.head.appendChild(sc);
+  });
+}
+
+function nombreArchivo(nombre) {
+  const limpio = (nombre.trim() || 'Paciente').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9 _-]/g, '').trim().replace(/\s+/g, '-');
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return `Reporte-mediciones-${limpio || 'Paciente'}-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.pdf`;
+}
+
+// Arma el reporte fuera de pantalla. guardar() descarga el .pdf; armarPdf() devuelve el
+// jsPDF sin guardar (para pruebas). Hay que llamar a limpiar() al terminar.
+async function prepararPdf(rep, nombre) {
+  // La posición fuera de pantalla va en un envoltorio: si la lleva la caja, html2pdf la copia y la mide en 0.
+  const envol = document.createElement('div');
+  envol.style.cssText = 'position:fixed;left:-10000px;top:0';
+  const caja = document.createElement('div'); // ancho A4: 794 px a 96 dpi
+  caja.style.cssText = 'width:794px;background:#fff;color:#2C2C2A;font-family:Arial,Helvetica,sans-serif';
+  caja.innerHTML = new DOMParser().parseFromString(rep.html, 'text/html').body.innerHTML;
+  envol.appendChild(caja); document.body.appendChild(envol);
+  // html2canvas no respeta width="100%" en un SVG: se le fija el tamaño en px según su viewBox.
+  caja.querySelectorAll('svg[viewBox]').forEach(sv => {
+    const [, , w, h] = sv.getAttribute('viewBox').split(/\s+/).map(Number), ancho = Math.round(sv.getBoundingClientRect().width);
+    if (w && h && ancho) { sv.setAttribute('width', ancho); sv.setAttribute('height', Math.round(ancho * h / w)); }
+  });
+  await cargarHtml2pdf();
+  const worker = window.html2pdf().set({
+    margin: 0,
+    filename: nombreArchivo(nombre),
+    image: { type: 'jpeg', quality: 0.95 },
+    html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: 794 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'svg'] },
+  }).from(caja);
+
+  // Devuelve el jsPDF final. Si el reporte se pasa apenas de una hoja (hasta 20 %), en vez
+  // de dejar una 2ª hoja casi vacía se arma una sola página con la imagen achicada para que
+  // entre entera. Si se pasa más, html2pdf lo corta en varias hojas.
+  async function armarPdf() {
+    const canvas = await worker.toCanvas().get('canvas');
+    const pdf = await worker.toPdf().get('pdf');
+    const anchoMm = 210, altoMm = 297, altoImgMm = anchoMm * canvas.height / canvas.width;
+    if (altoImgMm > altoMm && altoImgMm <= altoMm * 1.2) {
+      const k = altoMm / altoImgMm, w = anchoMm * k;
+      pdf.addPage();
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (anchoMm - w) / 2, 0, w, altoMm);
+      while (pdf.internal.getNumberOfPages() > 1) pdf.deletePage(1);
+    }
+    return pdf;
+  }
+  return { caja, armarPdf, guardar: async () => (await armarPdf()).save(nombreArchivo(nombre)), limpiar: () => envol.remove() };
+}
+
+async function descargarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value, boton, alTerminar } = {}) {
+  const rep = armarReporte(periodo, nombre);
+  if (!rep) return;
+  const texto = boton?.textContent;
+  if (boton) { boton.disabled = true; boton.textContent = 'Preparando el reporte…'; }
+  let pdf = null;
+  try {
+    pdf = await prepararPdf(rep, nombre);
+    await pdf.guardar();
+    log('in', `reporte PDF (descarga): ${rep.rows.length} mediciones`);
+    registrar('reporte_pdf', { ...rep.detalle, modo: 'descarga' });
+    alTerminar?.();
+  } catch (e) {
+    log('er', 'descarga del PDF: ' + e.message);
+    registrar('error', { tipo: 'pdf_descarga' });
+    // Si la descarga directa falla, queda el camino de siempre: imprimir.
+    alert('No se pudo descargar el reporte. Probá con el botón "Imprimir el reporte" y elegí "Guardar como PDF".');
+  } finally {
+    pdf?.limpiar();
+    if (boton) { boton.disabled = false; boton.textContent = texto; }
+  }
 }
 
 const DIAS_L = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -723,7 +830,7 @@ function pintarSimple() {
   const u = mediciones[0];
   if (!u) {
     $('sValor').textContent = '—'; $('sFecha').textContent = 'El medidor no tiene mediciones guardadas.';
-    $('sEtiqueta').hidden = true; $('sResumen').hidden = true; $('sPdf').disabled = true; return;
+    $('sEtiqueta').hidden = true; $('sResumen').hidden = true; $('sPdf').disabled = $('sImprimir').disabled = true; return;
   }
   $('sValor').innerHTML = '';
   $('sValor').append(u.valor ?? (u.fuera_de_rango === 'alto' ? 'HI' : 'LO'));
@@ -738,7 +845,7 @@ function pintarSimple() {
   const prom = nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : null;
   $('sResumen').hidden = false;
   $('sResumen').textContent = `${p.etiqueta}: ${p.filas.length} ${p.filas.length === 1 ? 'medición' : 'mediciones'}` + (prom !== null ? ` · promedio ${prom} ${u.unidad}` : '');
-  $('sPdf').disabled = !p.filas.length;
+  $('sPdf').disabled = $('sImprimir').disabled = !p.filas.length;
 }
 
 // El nombre se recuerda en este navegador (solo comodidad; puede no estar disponible).
@@ -789,11 +896,14 @@ $('inHex').onkeydown = e => { if (e.key === 'Enter') enviarManual(); };
 $('chkMantener').onchange = e => e.target.checked ? arrancarPing() : pararPing();
 $('bCsv').onclick = bajarCsv;
 $('bJson').onclick = copiarJson;
-$('bPdf').onclick = generarPdf;
+$('bPdf').onclick = () => generarPdf();
+$('bPdfDescargar').onclick = () => descargarPdf({ boton: $('bPdfDescargar') });
 $('selPeriodo').onchange = infoPeriodo;
 $('sBuscar').onclick = () => conectar();
 $('sLeer').onclick = descargar;
-$('sPdf').onclick = () => generarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, alTerminar: () => { simple('gracias'); registrar('gracias'); } });
+const alGracias = () => { simple('gracias'); registrar('gracias'); };
+$('sPdf').onclick = () => descargarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, boton: $('sPdf'), alTerminar: alGracias });
+$('sImprimir').onclick = () => generarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, alTerminar: alGracias });
 $('sOtraVezPdf').onclick = () => simple('listo');
 $('sTerminar').onclick = async () => { if (port) await desconectar(); fase = 'desconectado'; simple('desconectado'); };
 $('sNombre').oninput = e => guardarNombre(e.target.value);
@@ -804,6 +914,6 @@ $('aTecnico').onclick = () => verVista(true);
 $('aSimple').onclick = () => verVista(false);
 $('bLimpiar').onclick = () => $('log').replaceChildren();
 </script>
-<script src="admin.js"></script>
+<script src="admin.js?v=20261021"></script>
 </body>
 </html>
