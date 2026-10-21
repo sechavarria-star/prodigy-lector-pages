@@ -951,7 +951,10 @@ async function prepararPdf(rep, nombre) {
     margin: 0,
     filename: nombreArchivo(nombre),
     image: { type: 'jpeg', quality: 0.95 },
-    html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: 794 },
+    // scrollX/scrollY en 0: si la página estaba desplazada (el botón está abajo), html2canvas
+    // corría el reporte hacia abajo y lo cortaba. Y SIN windowWidth: con 794 y una ventana más
+    // ancha, el reporte salía corrido a la izquierda, sin el logo (Windows, 21/10/2026).
+    html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true, scrollX: 0, scrollY: 0 },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'svg'] },
   }).from(caja);
@@ -960,8 +963,14 @@ async function prepararPdf(rep, nombre) {
   // de dejar una 2ª hoja casi vacía se arma una sola página con la imagen achicada para que
   // entre entera. Si se pasa más, html2pdf lo corta en varias hojas.
   async function armarPdf() {
-    const canvas = await worker.toCanvas().get('canvas');
-    const pdf = await worker.toPdf().get('pdf');
+    // Además, se sube la página arriba de todo mientras se captura y después se vuelve.
+    const sx = window.scrollX, sy = window.scrollY;
+    window.scrollTo(0, 0);
+    let canvas, pdf;
+    try {
+      canvas = await worker.toCanvas().get('canvas');
+      pdf = await worker.toPdf().get('pdf');
+    } finally { window.scrollTo(sx, sy); }
     const anchoMm = 210, altoMm = 297, altoImgMm = anchoMm * canvas.height / canvas.width;
     if (altoImgMm > altoMm && altoImgMm <= altoMm * 1.2) {
       const k = altoMm / altoImgMm, w = anchoMm * k;
@@ -971,7 +980,7 @@ async function prepararPdf(rep, nombre) {
     }
     return pdf;
   }
-  return { caja, armarPdf, guardar: async () => (await armarPdf()).save(nombreArchivo(nombre)), limpiar: () => envol.remove() };
+  return { caja, worker, armarPdf, guardar: async () => (await armarPdf()).save(nombreArchivo(nombre)), limpiar: () => envol.remove() };
 }
 
 async function descargarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value, boton, alTerminar } = {}) {
