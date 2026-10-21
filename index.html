@@ -156,7 +156,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
     <section class="panel" data-fase="desconectado">
       <h2>Conectá tu medidor</h2>
       <ol class="lista">
-        <li>Enchufá el cable al medidor y a la computadora.</li>
+        <li>Enchufá el cable al medidor y a la computadora. Si ya estaba enchufado, desenchufalo y volvé a enchufarlo.</li>
         <li>Prendé el medidor.</li>
         <li>Tocá el botón azul.</li>
       </ol>
@@ -463,7 +463,9 @@ function simple(f, msgError) {
   const foco = document.querySelector(`#vistaSimple [data-fase="${f}"] .bgrande, #vistaSimple [data-fase="${f}"] .bsec`);
   if (foco && !$('vistaSimple').hidden) foco.focus({ preventScroll: true });
 }
-const MSG_NO_RESPONDE = 'El medidor no contesta. Fijate que el cable esté bien enchufado en el medidor, apagalo y volvé a prenderlo, y probá de nuevo.';
+// El medidor solo entra en modo "Lnk" al enchufarlo: después de una lectura, o si quedó
+// enchufado de antes, no responde hasta que se lo reenchufa (visto en Mac y Windows, 21/10/2026).
+const MSG_NO_RESPONDE = 'El medidor no contesta. Desenchufá el cable del medidor, esperá un segundo y volvé a enchufarlo hasta que la pantalla muestre Lnk. Después tocá "Probar de nuevo".';
 
 // ── serie ────────────────────────────────────────────
 // Puerto ya autorizado en este navegador: se usa sin mostrar el selector de Chrome.
@@ -539,14 +541,30 @@ async function leerConApp() {
   $('sConectandoP').textContent = 'Conectá el cable para que la pantalla muestre Lnk. La app Lector Prodigy lo lee sola: esperá unos segundos.';
   estado('Esperando la app de Mac…', 'xt');
   log('in', 'leyendo con la app Lector Prodigy (Mac)');
+  // El medidor solo entra en modo "Lnk" al enchufarlo: si quedó enchufado de antes (o ya se
+  // leyó), figura conectado pero no responde. Mientras se espera se consulta a la app y, si
+  // pasa eso, se pide reenchufarlo.
+  const vigia = setInterval(async () => {
+    if (mio !== pedidoApp || fase !== 'conectando') return clearInterval(vigia);
+    const e = await appMacEstado();
+    if (mio !== pedidoApp || fase !== 'conectando') return;
+    if (e?.conectado && e.estado === 'error') {
+      $('sConectandoT').textContent = 'Desenchufá y volvé a enchufar el medidor';
+      $('sConectandoP').textContent = 'El medidor quedó enchufado de antes y no responde. Desenchufá el cable del medidor, esperá un segundo y volvé a enchufarlo hasta que la pantalla muestre Lnk.';
+    } else if (e?.estado === 'leyendo') {
+      $('sConectandoT').textContent = 'Leyendo el medidor…';
+      $('sConectandoP').textContent = 'No lo desenchufes. Tarda unos segundos.';
+    }
+  }, 2000);
   try {
     const r = await fetch(APP_MAC + '/leer', { method: 'POST', body: JSON.stringify({ esperar: 60 }), signal: AbortSignal.timeout(75000) });
     const j = await r.json();
+    clearInterval(vigia);
     if (mio !== pedidoApp || fase !== 'conectando') return;   // el usuario cambió de camino
     if (!j.ok) {
       log('er', 'app de Mac: ' + j.error);
       simple('error', j.error === 'sin_medidor'
-        ? 'No apareció el medidor. Enchufalo para que la pantalla muestre Lnk y tocá "Probar de nuevo".'
+        ? 'No apareció el medidor. Desenchufalo, volvé a enchufarlo para que la pantalla muestre Lnk y tocá "Probar de nuevo".'
         : 'La app no pudo leer el medidor. Desenchufalo, volvé a enchufarlo y probá de nuevo.');
       registrar('error', { tipo: 'app_mac', detalle: String(j.error).slice(0, 60) });
       return;
@@ -559,6 +577,7 @@ async function leerConApp() {
     log('in', `app de Mac: ${res.porIndice.size} mediciones · ${res.bloques} bloque(s) · ${res.bytes} bytes`);
     finalizarLectura(new Map(res.porIndice), faltantes(res.porIndice), 1, res);
   } catch (e) {
+    clearInterval(vigia);
     if (mio !== pedidoApp || fase !== 'conectando') return;
     log('er', 'app de Mac: ' + e.name + ' ' + e.message);
     simple('error', 'No pudimos hablar con la app Lector Prodigy. Fijate que esté abierta (ícono de gota arriba a la derecha) y, si Chrome pregunta, permití el acceso a la red local.');
