@@ -193,6 +193,14 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <button class="bgrande" id="sPdf">Descargar reporte para el médico</button>
       <p class="nota" id="sPdfNota" style="margin-top:14px">El reporte se guarda solo, en la carpeta <b>Descargas</b> de la computadora.</p>
       <button class="bsec" id="sImprimir">Imprimir el reporte</button>
+      <button class="bsec" id="sWaAbrir">Enviar por WhatsApp</button>
+      <div id="sWa" class="resumen" style="margin-top:12px" hidden>
+        <label class="campo" for="sWaNumero">Número de WhatsApp</label>
+        <input class="input-big" id="sWaNumero" type="tel" inputmode="tel" autocomplete="tel" placeholder="11 2345 6789">
+        <p class="nota" style="margin:-8px 0 14px">Código de área y número, sin 0 ni 15. Para otro país, empezá con + y el código.</p>
+        <button class="bgrande" id="sWaEnviar">Enviar el reporte</button>
+        <p class="nota" id="sWaEstado" style="margin-top:12px" aria-live="polite"></p>
+      </div>
       <button class="bsec" id="sOtraVez">Leer de nuevo</button>
     </section>
 
@@ -274,6 +282,9 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
         </select></div>
       <button id="bPdfDescargar" class="btn bp" disabled>Descargar PDF</button>
       <button id="bPdf" class="btn bg" disabled>Imprimir</button>
+      <input id="inWa" class="fc ancho" type="tel" placeholder="WhatsApp: 11 2345 6789">
+      <button id="bWa" class="btn bg" disabled>Enviar por WhatsApp</button>
+      <span id="infoWa" class="kpi-sub"></span>
       <span id="infoPdf" class="kpi-sub"></span>
     </div>
     <p class="kpi-sub" style="margin-top:8px">Reporte para el diabetólogo: resumen con HbA1c estimada y tiempo en rango 70–180, evolución por día, día modal de 24 h y bitácora por horario. <b>Descargar PDF</b> lo guarda directo (como imagen); <b>Imprimir</b> abre el diálogo, donde también se puede elegir <b>Guardar como PDF</b> (con texto seleccionable). Se genera en este navegador: las mediciones no se mandan a ningún servidor.</p>
@@ -979,7 +990,7 @@ function pintar() {
   $('kUnidad').textContent = mediciones[0]?.unidad || 'mg/dL';
   $('kUlt').textContent = mediciones[0] ? (mediciones[0].valor ?? mediciones[0].fuera_de_rango.toUpperCase()) : '—';
   $('kUltF').textContent = mediciones[0] ? `${mediciones[0].fecha} ${mediciones[0].hora}` : '—';
-  $('bCsv').disabled = $('bJson').disabled = $('bPdf').disabled = $('bPdfDescargar').disabled = !mediciones.length;
+  $('bCsv').disabled = $('bJson').disabled = $('bPdf').disabled = $('bPdfDescargar').disabled = $('bWa').disabled = !mediciones.length;
   infoPeriodo();
 }
 
@@ -1159,6 +1170,53 @@ async function prepararPdf(rep, nombre) {
   return { caja, worker, armarPdf, guardar: async () => (await armarPdf()).save(nombreArchivo(nombre)), limpiar: () => envol.remove() };
 }
 
+// Envío por WhatsApp: la página arma el PDF (igual que la descarga directa) y lo manda a la
+// Edge Function, que valida el número y los límites y se lo pasa a n8n, que lo envía con la
+// plantilla `reporte_mediciones` desde la línea de Mediciones. Ni el número ni el PDF se guardan.
+const WA_KEY = 'lector-autocode:whatsapp';
+const ERRORES_WA = {
+  numero_invalido: 'Revisá el número: código de área y número, sin 0 ni 15 (por ejemplo 11 2345 6789).',
+  limite: 'Ya se enviaron varios reportes hace poco. Esperá un rato y probá de nuevo.',
+  no_configurado: 'El envío por WhatsApp todavía no está disponible. Mientras tanto, descargá el reporte y mandalo vos.',
+  pdf_invalido: 'No se pudo preparar el reporte. Probá de nuevo.',
+  tamano: 'El reporte es demasiado grande para enviarlo. Elegí un período más corto.',
+  envio: 'WhatsApp no pudo entregar el reporte. Revisá el número y probá de nuevo.',
+};
+async function enviarWhatsApp({ periodo = delPeriodo(), nombre = $('inNombre').value, numero, boton, avisar }) {
+  const rep = armarReporte(periodo, nombre);
+  if (!rep) return;
+  if (DEMO) return avisar('En el modo demo no se envía nada.', false);
+  if (String(numero || '').replace(/\D/g, '').length < 8) return avisar(ERRORES_WA.numero_invalido, false);
+  try { localStorage.setItem(WA_KEY, numero); } catch {}
+  const texto = boton?.textContent;
+  if (boton) { boton.disabled = true; boton.textContent = 'Enviando…'; }
+  avisar('Preparando y enviando el reporte…', null);
+  let pdf = null;
+  try {
+    pdf = await prepararPdf(rep, nombre);
+    const doc = await pdf.armarPdf();
+    const base64 = doc.output('datauristring').split(',')[1];
+    const r = await fetch(API_USO, { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ accion: 'whatsapp', numero, nombre: nombre.trim() || 'Paciente', pdf: base64 }) });
+    const j = await r.json().catch(() => ({}));
+    if (!j.ok) {
+      avisar(ERRORES_WA[j.error] || ERRORES_WA.envio, false);
+      registrar('error', { tipo: 'whatsapp', detalle: String(j.error || r.status).slice(0, 30) });
+      return;
+    }
+    avisar('Listo: el reporte se envió por WhatsApp. Va a llegar desde el número de Prodigy.', true);
+    log('in', `reporte PDF (whatsapp): ${rep.rows.length} mediciones`);
+    registrar('reporte_pdf', { ...rep.detalle, modo: 'whatsapp' });
+  } catch (e) {
+    log('er', 'whatsapp: ' + e.message);
+    avisar(ERRORES_WA.envio, false);
+    registrar('error', { tipo: 'whatsapp', detalle: e.name });
+  } finally {
+    pdf?.limpiar();
+    if (boton) { boton.disabled = false; boton.textContent = texto; }
+  }
+}
+
 async function descargarPdf({ periodo = delPeriodo(), nombre = $('inNombre').value, boton, alTerminar } = {}) {
   const rep = armarReporte(periodo, nombre);
   if (!rep) return;
@@ -1279,6 +1337,11 @@ $('sOtroTipo').onclick = async () => { if (port || hidDev) await desconectar(); 
 $('sLeer').onclick = descargar;
 const alGracias = () => { simple('gracias'); registrar('gracias'); };
 $('sPdf').onclick = () => descargarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, boton: $('sPdf'), alTerminar: alGracias });
+$('sWaAbrir').onclick = () => { $('sWa').hidden = false; $('sWaAbrir').hidden = true; $('sWaNumero').focus(); };
+$('sWaEnviar').onclick = () => enviarWhatsApp({ periodo: periodoSimple(), nombre: $('sNombre').value, numero: $('sWaNumero').value,
+  boton: $('sWaEnviar'), avisar: (t, ok) => { const e = $('sWaEstado'); e.textContent = t; e.style.color = ok === true ? 'var(--ok)' : ok === false ? 'var(--wa)' : ''; } });
+$('bWa').onclick = () => enviarWhatsApp({ numero: $('inWa').value, boton: $('bWa'), avisar: (t) => { $('infoWa').textContent = t; } });
+try { const n = localStorage.getItem(WA_KEY); if (n) { $('sWaNumero').value = n; $('inWa').value = n; } } catch {}
 $('sImprimir').onclick = () => generarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, alTerminar: alGracias });
 $('sOtraVezPdf').onclick = () => simple('listo');
 $('sTerminar').onclick = async () => { if (port || hidDev) await desconectar(); fase = 'desconectado'; simple('desconectado'); };
