@@ -161,7 +161,8 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
         <li>Tocá el botón azul.</li>
       </ol>
       <button class="bgrande" id="sBuscar">Buscar mi medidor</button>
-      <p class="nota" style="margin-top:16px">La primera vez aparece una ventanita pidiendo permiso: tocá <b>USB-Serial Controller</b> y después <b>Conectar</b> (o <b>Connect</b>).</p>
+      <p class="nota" style="margin-top:16px">La primera vez aparece una ventanita pidiendo permiso: tocá <b>Glucose Meter</b> y después <b>Conectar</b> (o <b>Connect</b>). Si el medidor muestra <b>Lnk</b>, buscalo enseguida: se apaga a los pocos segundos.</p>
+      <button class="bsec" id="sBuscarSerie">Mi medidor tiene un cable aparte (modelo anterior)</button>
     </section>
 
     <section class="panel" data-fase="conectando" hidden>
@@ -210,6 +211,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
         <p id="sError" style="margin:0"></p>
       </div>
       <button class="bgrande" id="sReintentar">Probar de nuevo</button>
+      <button class="bsec" id="sReintentarSerie">Mi medidor tiene un cable aparte (modelo anterior)</button>
     </section>
 
     <div class="pie"><button class="link" id="aTecnico">Modo técnico</button></div>
@@ -223,7 +225,8 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
   <div class="card">
     <div class="sec">Conexión</div>
     <div class="acciones">
-      <button id="bConectar" class="btn bp">Conectar medidor</button>
+      <button id="bConectar" class="btn bp">Conectar (cable serie)</button>
+      <button id="bConectarHid" class="btn bp">Conectar (USB integrado · HID)</button>
       <button id="bDesconectar" class="btn bg" disabled>Desconectar</button>
       <label class="sw"><input type="checkbox" id="chkMantener" disabled> Mantener encendido (ping cada 10 s)</label>
       <span id="ping" class="bx xm" hidden></span>
@@ -373,6 +376,13 @@ const BAUD = 9600, PING_MS = 10000, SILENCIO_MS = 1000, INTENTOS = 4;
 const STX = 0x02, ETX = 0x03, EOT = 0x04, READ_SERIAL = 0x58, READ_RECORDS = 0x05;
 const FIN_SERIE = [0x00, 0x9D, 0x9E];
 const FILTROS = [{ usbVendorId: 0x067B, usbProductId: 0x2303 }]; // Prolific PL2303
+// Modelo con USB integrado (HID). Protocolo del driver de Tidepool (lib/drivers/prodigy/autocode.js):
+//   V6 eBiologic 8E14:0900, sin feature reports · V7 04D9:B564, se configura el UART por feature report.
+//   Pedido: output report [0x01 largo, comando, 0…]. Respuesta: input reports [largo, datos…].
+const HID_FILTROS = [{ vendorId: 0x8E14, productId: 0x0900 }, { vendorId: 0x04D9, productId: 0xB564 }];
+const END = 0x9D;
+let hidDev = null, hidV6 = false, hidPedido = null;
+const ES_MAC = /Mac OS X/.test(navigator.userAgent) && !/iPhone|iPad/.test(navigator.userAgent);
 
 const $ = id => document.getElementById(id);
 
@@ -458,12 +468,20 @@ async function puertoAutorizado() {
   return ps.find(p => { const i = p.getInfo(); return i.usbVendorId === 0x067B && i.usbProductId === 0x2303; }) || ps[0] || null;
 }
 
-async function conectar(automatico = false) {
-  if (port) return;
+// tipo: 'auto' (lo que ya esté autorizado: primero HID), 'hid' o 'serie' (abren el selector de Chrome).
+let ultimoTipo = 'hid';
+async function conectar(automatico = false, tipo = 'auto') {
+  if (port || hidDev) return;
+  if (tipo !== 'auto') ultimoTipo = tipo;
+  if (tipo === 'hid' || (tipo === 'auto' && 'hid' in navigator)) {
+    const hecho = await conectarHid(automatico || tipo === 'auto', tipo === 'hid');
+    if (hecho || tipo === 'hid') return;
+  }
+  if (!('serial' in navigator)) return;
   try {
     port = await puertoAutorizado();
     if (port) log('in', 'medidor ya autorizado: conectando sin preguntar');
-    else if (automatico) return;
+    else if (automatico || tipo === 'auto') return;
     else port = await navigator.serial.requestPort({ filters: FILTROS });
     simple('conectando');
     await port.open({ baudRate: BAUD, dataBits: 8, parity: 'none', stopBits: 1 });
@@ -492,6 +510,108 @@ async function conectar(automatico = false) {
   }
 }
 
+// ── USB integrado (WebHID) ───────────────────────────
+// soloAutorizado: no abre el selector. conSelector: abre el selector de Chrome para este modelo.
+// Devuelve true si quedó conectado.
+async function conectarHid(soloAutorizado, conSelector) {
+  if (!('hid' in navigator)) {
+    if (conSelector) simple('error', 'Este navegador no puede leer este modelo de medidor. Abrí la página en Google Chrome o Microsoft Edge, en una computadora con Windows.');
+    return false;
+  }
+  try {
+    let dev = (await navigator.hid.getDevices()).find(d => HID_FILTROS.some(f => f.vendorId === d.vendorId && f.productId === d.productId));
+    if (dev) log('in', 'medidor (USB integrado) ya autorizado: conectando sin preguntar');
+    else if (!conSelector) return false;
+    else {
+      const elegidos = await navigator.hid.requestDevice({ filters: HID_FILTROS });
+      dev = elegidos[0];
+      if (!dev) {
+        log('er', 'no se eligió ningún medidor (USB integrado)');
+        simple('error', ES_MAC
+          ? 'No encontramos el medidor. En computadoras Mac este modelo (con USB integrado) no se puede leer desde el navegador: usá una PC con Windows. Si tu medidor tiene un cable aparte, tocá el botón de abajo.'
+          : 'No se eligió el medidor. Prendelo con el cable puesto (que muestre Lnk) y tocá "Buscar mi medidor" enseguida. Si tu medidor tiene un cable aparte, tocá el botón de abajo.');
+        registrar('error', { tipo: 'sin_hid', mac: ES_MAC });
+        return false;
+      }
+    }
+    simple('conectando');
+    if (!dev.opened) await dev.open();
+    hidDev = dev;
+    hidV6 = !dev.collections.some(c => c.featureReports?.length);
+    log('in', `HID abierto: ${dev.productName || 'medidor'} ${dev.vendorId.toString(16)}:${dev.productId.toString(16)} · ${hidV6 ? 'V6' : 'V7'} · salida ${largoSalida(dev)} bytes`);
+    if (!hidV6) {
+      // reportId 0 + set, baud (uint32 LE), paridad, control de flujo, bits de datos
+      const cfg = new Uint8Array(8); cfg[0] = 1; new DataView(cfg.buffer).setUint32(1, 57600, true); cfg[7] = 8;
+      await dev.sendFeatureReport(0, cfg);
+      log('tx', 'feature report UART 57600 8N1');
+    }
+    dev.oninputreport = e => recibirHid(new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength));
+    cableTipo = hidV6 ? 'hid_v6' : 'hid_v7';
+    ui(true);
+    if (await leerSerie()) {
+      registrar('conectado');
+      // Este modelo se apaga a los ~15 s si nadie le habla: en la vista simple se lee enseguida.
+      if (!$('vistaSimple').hidden && fase === 'conectado') descargar();
+    }
+    return true;
+  } catch (e) {
+    log('er', 'HID: ' + e.name + ' ' + e.message);
+    if (e.name === 'NotFoundError') {
+      simple('error', ES_MAC
+        ? 'No encontramos el medidor. En computadoras Mac este modelo (con USB integrado) no se puede leer desde el navegador: usá una PC con Windows.'
+        : 'No se eligió el medidor. Prendelo con el cable puesto (que muestre Lnk) y probá de nuevo enseguida.');
+      registrar('error', { tipo: 'sin_hid', mac: ES_MAC });
+    } else {
+      simple('error', MSG_NO_RESPONDE); registrar('error', { tipo: 'conexion_hid', nombre: e.name });
+    }
+    try { await hidDev?.close(); } catch {}
+    hidDev = null;
+    return conSelector; // con selector, el error ya se mostró: no seguir con el puerto serie
+  }
+}
+
+function largoSalida(dev) {
+  for (const c of dev.collections) for (const r of c.outputReports || []) {
+    const bits = (r.items || []).reduce((a, it) => a + it.reportSize * it.reportCount, 0);
+    if (bits) return Math.ceil(bits / 8);
+  }
+  return 32;
+}
+
+// Junta los input reports hasta completar la respuesta (misma lógica que Tidepool).
+function recibirHid(d) {
+  const ped = hidPedido;
+  if (!ped || !d.length) return;
+  const largo = d[0];
+  if (largo === 1) ped.largoTotal = d[1]; // paquete que anuncia el largo del mensaje
+  for (let i = 1; i <= largo && i < d.length; i++) {
+    ped.buf.push(d[i]);
+    const b = ped.buf;
+    if ((b.at(-1) === EOT && b.at(-2) === ETX) || b.at(-1) === END) ped.fin = true;
+    if (hidV6 && b[0] !== 0x01 && i === largo && ped.cmd === READ_SERIAL) ped.fin = true; // V6: serie sin terminador
+    if (ped.cmd === READ_SERIAL && ped.largoTotal != null && ped.largoTotal === b.length) ped.fin = true;
+  }
+  ped.ultimo = Date.now();
+}
+
+async function comandoHid(bytes, silencioso) {
+  const cmd = bytes.length === 1 ? bytes[0] : null;
+  const pkt = new Uint8Array(largoSalida(hidDev));
+  pkt[0] = Math.min(bytes.length, 255); pkt.set(bytes.slice(0, pkt.length - 1), 1);
+  hidPedido = { cmd, buf: [], fin: false, largoTotal: null, ultimo: Date.now() };
+  await hidDev.sendReport(0, pkt);
+  if (!silencioso) log('tx', 'HID ' + hex(pkt.slice(0, Math.max(2, bytes.length + 1))));
+  const t0 = Date.now();
+  while (!hidPedido.fin) {
+    await espera(40);
+    const quieto = Date.now() - hidPedido.ultimo;
+    if (hidPedido.buf.length && quieto > SILENCIO_MS) break;      // llegó algo y se cortó
+    if (!hidPedido.buf.length && Date.now() - t0 > 3000) break;   // no llegó nada
+  }
+  const r = hidPedido.buf.slice(); hidPedido = null;
+  return r;
+}
+
 async function leerSiempre() {
   reader = port.readable.getReader();
   try {
@@ -510,6 +630,7 @@ async function desconectar() {
   try { writer?.releaseLock(); } catch {}
   try { await port?.close(); } catch {}
   port = reader = writer = null;
+  if (hidDev) { try { hidDev.oninputreport = null; await hidDev.close(); } catch {} hidDev = null; hidPedido = null; }
   ui(false); log('in', 'puerto cerrado');
   if (!['listo', 'gracias', 'error'].includes(fase)) simple('desconectado');
 }
@@ -527,6 +648,16 @@ function completo(buf, cmd) {
 function comando(bytes, { intentos = INTENTOS, silencioso = false } = {}) {
   const tarea = ocupado.then(async () => {
     for (let i = 0; i < intentos; i++) {
+      if (hidDev) {
+        const r = await comandoHid(bytes, silencioso);
+        if (r.length) {
+          if (!silencioso) log('rx', `${r.length} bytes · ${hex(r.slice(0, 48))}${r.length > 48 ? ' …' : ''}`);
+          return r;
+        }
+        if (!silencioso) log('in', `sin respuesta (intento ${i + 1}/${intentos})`);
+        await espera(300);
+        continue;
+      }
       rx = [];
       await writer.write(new Uint8Array(bytes));
       if (!silencioso) log('tx', hex(bytes));
@@ -628,7 +759,8 @@ function pararPing() {
 
 // ── UI ───────────────────────────────────────────────
 function ui(conectado) {
-  $('bConectar').disabled = conectado;
+  $('bConectar').disabled = conectado || !('serial' in navigator);
+  $('bConectarHid').disabled = conectado || !('hid' in navigator);
   ['bDesconectar', 'bSerie', 'bDescargar', 'bEnviar', 'chkMantener'].forEach(id => $(id).disabled = !conectado);
   if (!conectado) { $('chkMantener').checked = false; estado('Desconectado', 'xm'); }
 }
@@ -879,15 +1011,21 @@ if (new URLSearchParams(location.search).has('demo')) {
   pintar(); pintarSimple(); simple('listo');
 }
 
-if (!('serial' in navigator)) { $('sinSoporte').hidden = false; $('bConectar').disabled = true; simple('sinSoporte'); }
+if (!('serial' in navigator)) $('bConectar').disabled = true;
+if (!('hid' in navigator)) $('bConectarHid').disabled = true;
+if (!('serial' in navigator) && !('hid' in navigator)) { $('sinSoporte').hidden = false; simple('sinSoporte'); }
 else if (fase === 'desconectado') simple('desconectado');
 if (!ADMIN_AL_ABRIR) registrar('pagina_abierta', { soporta_serial: 'serial' in navigator });
 // Al abrir la página o enchufar el cable, conecta solo si el puerto ya estaba autorizado.
 navigator.serial?.addEventListener('connect', () => { if (location.hash !== '#modoadmin') conectar(true); });
-if ('serial' in navigator && !DEMO && !ADMIN_AL_ABRIR) conectar(true);
+if (('serial' in navigator || 'hid' in navigator) && !DEMO && !ADMIN_AL_ABRIR) conectar(true);
+// El modelo HID aparece cuando muestra "Lnk": si ya estaba autorizado, se conecta solo.
+navigator.hid?.addEventListener('connect', () => { if (location.hash !== '#modoadmin') conectar(true); });
+navigator.hid?.addEventListener('disconnect', e => { if (e.device === hidDev) { log('er', 'el medidor se desconectó'); desconectar(); } });
 navigator.serial?.addEventListener('disconnect', e => { if (e.target === port) { log('er', 'el cable se desconectó'); desconectar(); } });
 
-$('bConectar').onclick = () => conectar();
+$('bConectar').onclick = () => conectar(false, 'serie');
+$('bConectarHid').onclick = () => conectar(false, 'hid');
 $('bDesconectar').onclick = desconectar;
 $('bSerie').onclick = leerSerie;
 $('bDescargar').onclick = descargar;
@@ -899,21 +1037,23 @@ $('bJson').onclick = copiarJson;
 $('bPdf').onclick = () => generarPdf();
 $('bPdfDescargar').onclick = () => descargarPdf({ boton: $('bPdfDescargar') });
 $('selPeriodo').onchange = infoPeriodo;
-$('sBuscar').onclick = () => conectar();
+$('sBuscar').onclick = () => conectar(false, 'hid');
+$('sBuscarSerie').onclick = () => conectar(false, 'serie');
+$('sReintentarSerie').onclick = async () => { if (port || hidDev) await desconectar(); simple('desconectado'); conectar(false, 'serie'); };
 $('sLeer').onclick = descargar;
 const alGracias = () => { simple('gracias'); registrar('gracias'); };
 $('sPdf').onclick = () => descargarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, boton: $('sPdf'), alTerminar: alGracias });
 $('sImprimir').onclick = () => generarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, alTerminar: alGracias });
 $('sOtraVezPdf').onclick = () => simple('listo');
-$('sTerminar').onclick = async () => { if (port) await desconectar(); fase = 'desconectado'; simple('desconectado'); };
+$('sTerminar').onclick = async () => { if (port || hidDev) await desconectar(); fase = 'desconectado'; simple('desconectado'); };
 $('sNombre').oninput = e => guardarNombre(e.target.value);
 $('inNombre').oninput = e => guardarNombre(e.target.value);
 $('sOtraVez').onclick = async () => { await desconectar(); simple('desconectado'); };
-$('sReintentar').onclick = async () => { if (port) await desconectar(); simple('desconectado'); conectar(); };
+$('sReintentar').onclick = async () => { if (port || hidDev) await desconectar(); simple('desconectado'); conectar(false, ultimoTipo); };
 $('aTecnico').onclick = () => verVista(true);
 $('aSimple').onclick = () => verVista(false);
 $('bLimpiar').onclick = () => $('log').replaceChildren();
 </script>
-<script src="admin.js?v=20261021b"></script>
+<script src="admin.js?v=20261021c"></script>
 </body>
 </html>

@@ -12,7 +12,8 @@
   const EVENTOS = { pagina_abierta: 'Abrió la página', conectado: 'Conectó el medidor', lectura: 'Leyó las mediciones',
     reporte_pdf: 'Generó el reporte', gracias: 'Llegó al final', error: 'Error' };
   const ERRORES = { sin_puerto: 'No eligió el medidor', puerto_ocupado: 'Puerto ocupado', no_responde_serie: 'El medidor no responde',
-    descarga: 'Falló la lectura', conexion: 'Error al conectar', otro: 'Otro' };
+    descarga: 'Falló la lectura', conexion: 'Error al conectar', sin_hid: 'No eligió el medidor (USB integrado)',
+    conexion_hid: 'Error al conectar (USB integrado)', pdf_descarga: 'Falló la descarga del PDF', otro: 'Otro' };
   let dias = 30, cargando = false;
 
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

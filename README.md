@@ -14,8 +14,13 @@ de la función está en el repo `prodigy` (`lector/supabase/`).
 
 Publicada en https://appmediciones.giwa-ia.com
 
-Protocolo: UART 9600 8N1 sobre cable Prolific PL2303, comandos de 1 byte
-(`0x58` número de serie, `0x05` mediciones). Detalle y script equivalente en
+Dos modelos de conexión, mismo protocolo (comandos de 1 byte: `0x58` número de serie,
+`0x05` mediciones):
+
+- **Cable aparte** (Prolific PL2303 `067B:2303`): Web Serial, UART 9600 8N1. Probado con un medidor real.
+- **USB integrado** (HID; V6 eBiologic `8E14:0900`, V7 `04D9:B564`): WebHID, protocolo del driver de
+  Tidepool. Probado con un medidor simulado; **en macOS no funciona**: el sistema no le asigna el driver
+  HID a este equipo (verificado 21/10/2026), así que Chrome no lo ve. Pendiente probar en Windows. Detalle y script equivalente en
 Python en el repo `prodigy` (`scripts/leer_autocode.py`). Basado en el driver
 open source de [Tidepool Uploader](https://github.com/tidepool-org/uploader).
 
