@@ -287,7 +287,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <span id="infoWa" class="kpi-sub"></span>
       <span id="infoPdf" class="kpi-sub"></span>
     </div>
-    <p class="kpi-sub" style="margin-top:8px">Reporte para el diabetólogo: resumen con HbA1c estimada y tiempo en rango 70–180, evolución por día, día modal de 24 h y bitácora por horario. <b>Descargar PDF</b> lo guarda directo (como imagen); <b>Imprimir</b> abre el diálogo, donde también se puede elegir <b>Guardar como PDF</b> (con texto seleccionable). Se genera en este navegador: las mediciones no se mandan a ningún servidor, salvo que elijas <b>Enviar por WhatsApp</b>; en ese caso el PDF pasa por nuestro servidor solo para entregarlo y no se guarda.</p>
+    <p class="kpi-sub" style="margin-top:8px">Reporte para el diabetólogo: resumen con HbA1c estimada y tiempo en rango 70–180, evolución por día, día modal de 24 h y bitácora por horario. <b>Descargar PDF</b> lo guarda directo (como imagen); <b>Imprimir</b> abre el diálogo, donde también se puede elegir <b>Guardar como PDF</b> (con texto seleccionable). Se genera en este navegador: las mediciones no se mandan a ningún servidor.</p>
   </div>
 
   <div class="card">
@@ -1174,6 +1174,9 @@ async function prepararPdf(rep, nombre) {
 // Edge Function, que valida el número y los límites y se lo pasa a n8n, que lo envía con la
 // plantilla `reporte_mediciones_esp` desde la línea de Mediciones. Ni el número ni el PDF se guardan.
 const WA_KEY = 'lector-autocode:whatsapp';
+// Apagado hasta que la WABA tenga medio de pago: sin eso Meta acepta la plantilla y después
+// la descarta (error 131042), y la página diría "enviado" sin que llegue nada.
+const WA_ACTIVO = false;
 const ERRORES_WA = {
   numero_invalido: 'Revisá el número: código de área y número, sin 0 ni 15 (por ejemplo 11 2345 6789).',
   limite: 'Ya se enviaron varios reportes hace poco. Esperá un rato y probá de nuevo.',
@@ -1342,6 +1345,7 @@ $('sWaEnviar').onclick = () => enviarWhatsApp({ periodo: periodoSimple(), nombre
   boton: $('sWaEnviar'), avisar: (t, ok) => { const e = $('sWaEstado'); e.textContent = t; e.style.color = ok === true ? 'var(--ok)' : ok === false ? 'var(--wa)' : ''; } });
 $('bWa').onclick = () => enviarWhatsApp({ numero: $('inWa').value, boton: $('bWa'), avisar: (t) => { $('infoWa').textContent = t; } });
 try { const n = localStorage.getItem(WA_KEY); if (n) { $('sWaNumero').value = n; $('inWa').value = n; } } catch {}
+if (!WA_ACTIVO) ['sWaAbrir', 'sWa', 'inWa', 'bWa', 'infoWa'].forEach((id) => { $(id).style.display = 'none'; });
 $('sImprimir').onclick = () => generarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, alTerminar: alGracias });
 $('sOtraVezPdf').onclick = () => simple('listo');
 $('sTerminar').onclick = async () => { if (port || hidDev) await desconectar(); fase = 'desconectado'; simple('desconectado'); };
