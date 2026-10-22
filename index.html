@@ -196,8 +196,8 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <button class="bsec" id="sWaAbrir">Enviar por WhatsApp</button>
       <div id="sWa" class="resumen" style="margin-top:12px" hidden>
         <label class="campo" for="sWaNumero">Número de WhatsApp</label>
-        <input class="input-big" id="sWaNumero" type="tel" inputmode="tel" autocomplete="tel" placeholder="11 2345 6789">
-        <p class="nota" style="margin:-8px 0 14px">Código de área y número, sin 0 ni 15. Para otro país, empezá con + y el código.</p>
+        <input class="input-big" id="sWaNumero" type="tel" inputmode="tel" autocomplete="tel" placeholder="549 11 2345 6789">
+        <p class="nota" style="margin:-8px 0 14px">549 + código de área + número, sin 0 ni 15. Por ejemplo: 549 11 2345 6789.</p>
         <button class="bgrande" id="sWaEnviar">Enviar el reporte</button>
         <p class="nota" id="sWaEstado" style="margin-top:12px" aria-live="polite"></p>
       </div>
@@ -282,7 +282,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
         </select></div>
       <button id="bPdfDescargar" class="btn bp" disabled>Descargar PDF</button>
       <button id="bPdf" class="btn bg" disabled>Imprimir</button>
-      <input id="inWa" class="fc ancho" type="tel" placeholder="WhatsApp: 11 2345 6789">
+      <input id="inWa" class="fc ancho" type="tel" placeholder="WhatsApp: 549 11 2345 6789">
       <button id="bWa" class="btn bg" disabled>Enviar por WhatsApp</button>
       <span id="infoWa" class="kpi-sub"></span>
       <span id="infoPdf" class="kpi-sub"></span>
@@ -1178,7 +1178,7 @@ const WA_KEY = 'lector-autocode:whatsapp';
 // la descarta (error 131042), y la página diría "enviado" sin que llegue nada.
 const WA_ACTIVO = true;
 const ERRORES_WA = {
-  numero_invalido: 'Revisá el número: código de área y número, sin 0 ni 15 (por ejemplo 11 2345 6789).',
+  numero_invalido: 'Revisá el número: 549 + código de área + número, sin 0 ni 15 (por ejemplo 549 11 2345 6789).',
   limite: 'Ya se enviaron varios reportes hace poco. Esperá un rato y probá de nuevo.',
   no_configurado: 'El envío por WhatsApp todavía no está disponible. Mientras tanto, descargá el reporte y mandalo vos.',
   pdf_invalido: 'No se pudo preparar el reporte. Probá de nuevo.',
@@ -1189,7 +1189,9 @@ async function enviarWhatsApp({ periodo = delPeriodo(), nombre = $('inNombre').v
   const rep = armarReporte(periodo, nombre);
   if (!rep) return;
   if (DEMO) return avisar('En el modo demo no se envía nada.', false);
-  if (String(numero || '').replace(/\D/g, '').length < 8) return avisar(ERRORES_WA.numero_invalido, false);
+  // Formato pedido: 549 + código de área + número (13 dígitos). Se aceptan espacios, guiones y "+".
+  numero = String(numero || '').replace(/\D/g, '');
+  if (!/^549\d{10}$/.test(numero)) return avisar(ERRORES_WA.numero_invalido, false);
   try { localStorage.setItem(WA_KEY, numero); } catch {}
   const texto = boton?.textContent;
   if (boton) { boton.disabled = true; boton.textContent = 'Enviando…'; }
