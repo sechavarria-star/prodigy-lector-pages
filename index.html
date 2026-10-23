@@ -207,7 +207,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
     <section class="panel gracias" data-fase="gracias" hidden>
       <span class="logo-chip"><img src="logo-prodigy.svg" alt="Prodigy Diabetes"></span>
       <h2>¡Gracias por usar el lector de Prodigy!</h2>
-      <p>Tu reporte quedó guardado en la computadora. Llevalo o mandáselo a tu médico en la próxima consulta.</p>
+      <p id="sGraciasTexto">Tu reporte quedó guardado en la computadora. Llevalo o mandáselo a tu médico en la próxima consulta.</p>
       <p>Seguí midiéndote como te indicó tu médico: cada medición suma.</p>
       <div class="contacto">¿Dudas con el medidor? Servicio al cliente de Prodigy<br><b>+54 9 11 6409-6023</b></div>
       <button class="bsec" id="sOtraVezPdf">Volver a descargar el reporte</button>
@@ -1185,7 +1185,7 @@ const ERRORES_WA = {
   tamano: 'El reporte es demasiado grande para enviarlo. Elegí un período más corto.',
   envio: 'WhatsApp no pudo entregar el reporte. Revisá el número y probá de nuevo.',
 };
-async function enviarWhatsApp({ periodo = delPeriodo(), nombre = $('inNombre').value, numero, boton, avisar }) {
+async function enviarWhatsApp({ periodo = delPeriodo(), nombre = $('inNombre').value, numero, boton, avisar, alTerminar }) {
   const rep = armarReporte(periodo, nombre);
   if (!rep) return;
   if (DEMO) return avisar('En el modo demo no se envía nada.', false);
@@ -1212,6 +1212,8 @@ async function enviarWhatsApp({ periodo = delPeriodo(), nombre = $('inNombre').v
     avisar('Listo: el reporte se envió por WhatsApp. Va a llegar desde el número de Prodigy.', true);
     log('in', `reporte PDF (whatsapp): ${rep.rows.length} mediciones`);
     registrar('reporte_pdf', { ...rep.detalle, modo: 'whatsapp' });
+    // La confirmación queda a la vista un momento antes de pasar al paso 4.
+    if (alTerminar) setTimeout(alTerminar, 2500);
   } catch (e) {
     log('er', 'whatsapp: ' + e.message);
     avisar(ERRORES_WA.envio, false);
@@ -1340,11 +1342,15 @@ $('selPeriodo').onchange = infoPeriodo;
 $('sBuscar').onclick = () => buscarMedidor();
 $('sOtroTipo').onclick = async () => { if (port || hidDev) await desconectar(); buscarMedidor([otroTipo]); };
 $('sLeer').onclick = descargar;
-const alGracias = () => { simple('gracias'); registrar('gracias'); };
+const GRACIAS_TEXTO = {
+  pdf: 'Tu reporte quedó guardado en la computadora. Llevalo o mandáselo a tu médico en la próxima consulta.',
+  whatsapp: 'Te mandamos el reporte por WhatsApp desde el número de Prodigy. Reenviáselo a tu médico o mostráselo en la próxima consulta.',
+};
+const alGracias = (modo = 'pdf') => { $('sGraciasTexto').textContent = GRACIAS_TEXTO[modo]; simple('gracias'); registrar('gracias'); };
 $('sPdf').onclick = () => descargarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, boton: $('sPdf'), alTerminar: alGracias });
 $('sWaAbrir').onclick = () => { $('sWa').hidden = false; $('sWaAbrir').hidden = true; $('sWaNumero').focus(); };
 $('sWaEnviar').onclick = () => enviarWhatsApp({ periodo: periodoSimple(), nombre: $('sNombre').value, numero: $('sWaNumero').value,
-  boton: $('sWaEnviar'), avisar: (t, ok) => { const e = $('sWaEstado'); e.textContent = t; e.style.color = ok === true ? 'var(--ok)' : ok === false ? 'var(--wa)' : ''; } });
+  boton: $('sWaEnviar'), alTerminar: () => { $('sWaEstado').textContent = ''; alGracias('whatsapp'); }, avisar: (t, ok) => { const e = $('sWaEstado'); e.textContent = t; e.style.color = ok === true ? 'var(--ok)' : ok === false ? 'var(--wa)' : ''; } });
 $('bWa').onclick = () => enviarWhatsApp({ numero: $('inWa').value, boton: $('bWa'), avisar: (t) => { $('infoWa').textContent = t; } });
 try { const n = localStorage.getItem(WA_KEY); if (n) { $('sWaNumero').value = n; $('inWa').value = n; } } catch {}
 if (!WA_ACTIVO) ['sWaAbrir', 'sWa', 'inWa', 'bWa', 'infoWa'].forEach((id) => { $(id).style.display = 'none'; });
