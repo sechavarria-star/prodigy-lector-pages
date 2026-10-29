@@ -221,6 +221,8 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       </div>
       <button class="bgrande" id="sReintentar">Probar de nuevo</button>
       <button class="bsec" id="sOtroTipo">Buscar de la otra forma</button>
+      <button class="bsec" id="sSinFiltro" hidden>Mi medidor no aparece en la lista</button>
+      <p class="nota" id="sSinFiltroNota" hidden style="margin-top:12px">Se abre una lista con todo lo que está enchufado a la computadora. Elegí el que tenga un nombre parecido a <b>Glucose Meter</b>, <b>USB-Serial</b>, <b>USB Serial Port</b> o <b>COM</b>.</p>
     </section>
 
     <div class="pie"><button class="link" id="aTecnico">Modo técnico</button></div>
@@ -388,11 +390,27 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
 const BAUD = 9600, PING_MS = 10000, SILENCIO_MS = 1000, INTENTOS = 4;
 const STX = 0x02, ETX = 0x03, EOT = 0x04, READ_SERIAL = 0x58, READ_RECORDS = 0x05;
 const FIN_SERIE = [0x00, 0x9D, 0x9E];
-const FILTROS = [{ usbVendorId: 0x067B, usbProductId: 0x2303 }]; // Prolific PL2303
+// Cable aparte: se filtra por fabricante del conversor USB-serie, no por modelo, porque en los
+// lotes repartidos hay distintos chips (28/10/2026). Prolific (PL2303 en todas sus versiones),
+// WCH CH340, Silicon Labs CP210x y FTDI.
+const FILTROS = [{ usbVendorId: 0x067B }, { usbVendorId: 0x1A86 }, { usbVendorId: 0x10C4 }, { usbVendorId: 0x0403 }];
 // Modelo con USB integrado (HID). Protocolo del driver de Tidepool (lib/drivers/prodigy/autocode.js):
 //   V6 eBiologic 8E14:0900, sin feature reports · V7 04D9:B564, se configura el UART por feature report.
 //   Pedido: output report [0x01 largo, comando, 0…]. Respuesta: input reports [largo, datos…].
-const HID_FILTROS = [{ vendorId: 0x8E14, productId: 0x0900 }, { vendorId: 0x04D9, productId: 0xB564 }];
+// Se acepta cualquier producto de estos dos fabricantes (otros lotes pueden traer otro productId).
+// Chrome no muestra teclados ni mouses en el selector, así que no aparecen aunque sean Holtek.
+const HID_FILTROS = [{ vendorId: 0x8E14 }, { vendorId: 0x04D9 }];
+const esMedidorHid = d => HID_FILTROS.some(f => f.vendorId === d.vendorId);
+// Lo que el usuario eligió en la ventanita (también sin filtro, desde "Mi medidor no aparece").
+let hidElegido = null, puertoElegido = null;
+// Identificador del dispositivo elegido (fabricante:producto y nombre), para saber qué modelos
+// andan dando vuelta. Va en el detalle de los eventos de uso; nunca lleva mediciones.
+let dispositivoId = null;
+const hex4 = n => (n || 0).toString(16).padStart(4, '0');
+function anotarDispositivo(tipo, vid, pid, nombre) {
+  dispositivoId = { tipo, id: `${hex4(vid)}:${hex4(pid)}`, nombre: String(nombre || '').slice(0, 40) || undefined };
+  log('in', `dispositivo elegido: ${tipo} ${dispositivoId.id}${dispositivoId.nombre ? ' · ' + dispositivoId.nombre : ''}`);
+}
 const END = 0x9D;
 let hidDev = null, hidV6 = false, hidPedido = null;
 const ES_MAC = /Mac OS X/.test(navigator.userAgent) && !/iPhone|iPad/.test(navigator.userAgent);
@@ -424,7 +442,8 @@ function registrar(evento, detalle = {}) {
   if (DEMO) return;
   const cuerpo = {
     sesion: SESION, evento, serie: (serie || '').replace(/[^0-9A-Za-z._-]/g, '').slice(0, 40) || null, cable: cableTipo,
-    vista: $('vistaSimple')?.hidden ? 'tecnica' : 'simple', ...entorno(), detalle,
+    vista: $('vistaSimple')?.hidden ? 'tecnica' : 'simple', ...entorno(),
+    detalle: dispositivoId ? { dispositivo: dispositivoId, ...detalle } : detalle,
   };
   try {
     fetch(API_USO, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(cuerpo), keepalive: true })
@@ -467,6 +486,7 @@ function simple(f, msgError) {
   if (f === 'conectando' && fase !== 'conectando') { $('sConectandoT').textContent = 'Buscando el medidor…'; $('sConectandoP').textContent = 'Esperá unos segundos.'; $('sCableAparte').hidden = true; }
   fase = f;
   $('sOtroTipo').hidden = true; // solo lo muestra buscarMedidor() cuando hace falta
+  $('sSinFiltro').hidden = $('sSinFiltroNota').hidden = true; // solo los muestra sinMedidor()
   document.querySelectorAll('#vistaSimple [data-fase]').forEach(el => el.hidden = el.dataset.fase !== f);
   if (msgError) $('sError').textContent = msgError;
   const n = { desconectado: 1, conectando: 1, error: 1, sinSoporte: 1, conectado: 2, descargando: 2, listo: 3, gracias: 5 }[f];
@@ -482,7 +502,8 @@ const MSG_NO_RESPONDE = 'El medidor no contesta. Desenchufá el cable del medido
 // Puerto ya autorizado en este navegador: se usa sin mostrar el selector de Chrome.
 async function puertoAutorizado() {
   const ps = await navigator.serial.getPorts();
-  return ps.find(p => { const i = p.getInfo(); return i.usbVendorId === 0x067B && i.usbProductId === 0x2303; }) || ps[0] || null;
+  if (puertoElegido && ps.includes(puertoElegido)) return puertoElegido;
+  return ps.find(p => { const i = p.getInfo(); return FILTROS.some(f => f.usbVendorId === i.usbVendorId); }) || ps[0] || null;
 }
 
 // tipo: 'auto' (lo que ya esté autorizado: primero HID), 'hid' o 'serie' (abren el selector de Chrome).
@@ -500,10 +521,11 @@ async function conectar(automatico = false, tipo = 'auto') {
     if (port) log('in', 'medidor ya autorizado: conectando sin preguntar');
     else if (automatico || tipo === 'auto') return;
     else port = await navigator.serial.requestPort({ filters: FILTROS });
-    simple('conectando');
-    await port.open({ baudRate: BAUD, dataBits: 8, parity: 'none', stopBits: 1 });
     const info = port.getInfo();
     cableTipo = info.usbVendorId === 0x067B ? 'serie_pl2303' : info.usbVendorId ? `usb_${info.usbVendorId.toString(16)}_${(info.usbProductId || 0).toString(16)}` : 'serie';
+    anotarDispositivo('serie', info.usbVendorId, info.usbProductId);
+    simple('conectando');
+    await port.open({ baudRate: BAUD, dataBits: 8, parity: 'none', stopBits: 1 });
     writer = port.writable.getWriter();
     leerSiempre();
     log('in', `puerto abierto a ${BAUD} baudios`);
@@ -604,26 +626,28 @@ async function leerConApp() {
 let otroTipo = 'serie';
 const NOMBRE_TIPO = { hid: 'USB integrado', serie: 'cable aparte' };
 
-async function elegir(tipo) {
+// sinFiltro: la ventanita muestra todo lo enchufado (plan B para modelos que no conocemos).
+async function elegir(tipo, sinFiltro = false) {
   try {
     if (tipo === 'hid') {
       if (!('hid' in navigator)) return null;
-      return (await navigator.hid.requestDevice({ filters: HID_FILTROS }))[0] || null;
+      return hidElegido = (await navigator.hid.requestDevice({ filters: sinFiltro ? [] : HID_FILTROS }))[0] || null;
     }
     if (!('serial' in navigator)) return null;
-    return await navigator.serial.requestPort({ filters: FILTROS });
+    return puertoElegido = await navigator.serial.requestPort(sinFiltro ? {} : { filters: FILTROS });
   } catch (e) {
     if (e.name !== 'NotFoundError') log('er', `selector ${tipo}: ${e.name} ${e.message}`);
     return null;
   }
 }
 
-async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie']) {
+let otroSinFiltro = false;
+async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie'], sinFiltro = false) {
   if (port || hidDev) return;
   // Mac con la app instalada: si ya leyó (o el medidor está enchufado), se usa la app;
   // si no, se prueba el cable aparte y, si no se elige nada, se espera a la app.
   let app = null;
-  if (ES_MAC && orden.length > 1) {
+  if (ES_MAC && orden.length > 1 && !sinFiltro) {
     app = await appMacEstado();
     if (app?.ok) return leerConApp();   // con la app instalada: directo a "Enchufá el medidor"
   }
@@ -632,28 +656,33 @@ async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie'
     const tipo = orden[i];
     // La 2ª ventanita solo se puede abrir si sigue vivo el gesto del toque; si no, se ofrece un botón.
     if (i > 0 && navigator.userActivation && !navigator.userActivation.isActive) {
-      otroTipo = tipo;
+      otroTipo = tipo; otroSinFiltro = sinFiltro;
       simple('error', 'No encontramos el medidor en la ventanita. Tocá el botón de abajo para buscarlo de la otra forma.');
       $('sOtroTipo').textContent = `Buscar mi medidor (${NOMBRE_TIPO[tipo]})`;
       $('sOtroTipo').hidden = false;
       return;
     }
-    log('in', `buscando medidor: ${NOMBRE_TIPO[tipo]}`);
-    const elegido = await elegir(tipo);
+    log('in', `buscando medidor: ${NOMBRE_TIPO[tipo]}${sinFiltro ? ' (sin filtro)' : ''}`);
+    const elegido = await elegir(tipo, sinFiltro);
     if (elegido) {
       ultimoTipo = tipo;
-      await conectar(true, 'auto'); // ya autorizado: conecta sin volver a preguntar
+      if (tipo === 'hid') await conectarHid(true, false); // ya autorizado: conecta sin volver a preguntar
+      else await conectar(true, 'auto');
       return;
     }
   }
-  sinMedidor();
+  sinMedidor(sinFiltro);
 }
 
-function sinMedidor() {
+function sinMedidor(sinFiltro = false) {
   simple('error', ES_MAC
     ? 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido. Si tu medidor tiene el USB integrado (sin cable aparte), en Mac hace falta la app Lector Prodigy, o usá una PC con Windows.'
-    : 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido (que muestre Lnk o PC) y probá de nuevo.');
-  registrar('error', { tipo: 'sin_medidor', mac: ES_MAC });
+    : sinFiltro
+      ? 'No encontramos el medidor. Si no aparece en ninguna lista, puede que a la computadora le falte el programa (driver) del cable: probá en otra computadora o con otro cable, o comunicate con Prodigy.'
+      : 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido (que muestre Lnk o PC) y probá de nuevo.');
+  // Plan B: mostrar todo lo enchufado, para modelos o cables que no conocemos.
+  if (!sinFiltro) $('sSinFiltro').hidden = $('sSinFiltroNota').hidden = false;
+  registrar('error', { tipo: sinFiltro ? 'sin_medidor_sin_filtro' : 'sin_medidor', mac: ES_MAC });
 }
 
 // ── USB integrado (WebHID) ───────────────────────────
@@ -665,7 +694,8 @@ async function conectarHid(soloAutorizado, conSelector) {
     return false;
   }
   try {
-    let dev = (await navigator.hid.getDevices()).find(d => HID_FILTROS.some(f => f.vendorId === d.vendorId && f.productId === d.productId));
+    const autorizados = await navigator.hid.getDevices();
+    let dev = (hidElegido && autorizados.includes(hidElegido) ? hidElegido : null) || autorizados.find(esMedidorHid);
     if (dev) log('in', 'medidor (USB integrado) ya autorizado: conectando sin preguntar');
     else if (!conSelector) return false;
     else {
@@ -680,6 +710,7 @@ async function conectarHid(soloAutorizado, conSelector) {
         return false;
       }
     }
+    anotarDispositivo('hid', dev.vendorId, dev.productId, dev.productName);
     simple('conectando');
     if (!dev.opened) await dev.open();
     hidDev = dev;
@@ -1340,7 +1371,8 @@ $('bPdf').onclick = () => generarPdf();
 $('bPdfDescargar').onclick = () => descargarPdf({ boton: $('bPdfDescargar') });
 $('selPeriodo').onchange = infoPeriodo;
 $('sBuscar').onclick = () => buscarMedidor();
-$('sOtroTipo').onclick = async () => { if (port || hidDev) await desconectar(); buscarMedidor([otroTipo]); };
+$('sOtroTipo').onclick = async () => { if (port || hidDev) await desconectar(); buscarMedidor([otroTipo], otroSinFiltro); };
+$('sSinFiltro').onclick = async () => { if (port || hidDev) await desconectar(); buscarMedidor(undefined, true); };
 $('sLeer').onclick = descargar;
 const GRACIAS_TEXTO = {
   pdf: 'Tu reporte quedó guardado en la computadora. Llevalo o mandáselo a tu médico en la próxima consulta.',
