@@ -219,6 +219,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
         <h2 style="font-size:25px;margin-bottom:8px">No pudimos leer el medidor</h2>
         <p id="sError" style="margin:0"></p>
       </div>
+      <p class="nota" id="sCodigo" style="margin:-6px 0 16px"></p>
       <button class="bgrande" id="sReintentar">Probar de nuevo</button>
       <button class="bsec" id="sOtroTipo">Buscar de la otra forma</button>
       <button class="bsec" id="sSinFiltro" hidden>Mi medidor no aparece en la lista</button>
@@ -423,6 +424,36 @@ const $ = id => document.getElementById(id);
 // NUNCA se mandan valores de glucemia ni el nombre del paciente. Si falla, no pasa nada.
 const API_USO = 'https://ofhiogczijhzkuqdjwvz.supabase.co/functions/v1/prodigy-med';
 const SESION = crypto.randomUUID();
+const CODIGO_SOPORTE = SESION.slice(0, 6).toUpperCase();
+
+// Rastro para diagnóstico: los últimos pasos del registro técnico, SIN las líneas de datos
+// recibidos del medidor (ahí viajan las mediciones).
+const rastro = [];
+function rastroTexto(max) {
+  let txt = '';
+  for (let i = rastro.length - 1; i >= 0; i--) {
+    const l = rastro[i] + '\n';
+    if (txt.length + l.length > max) break;
+    txt = l + txt;
+  }
+  return txt.trim();
+}
+// Qué soporta el equipo: versión de Windows (10 u 11), WebHID / Web Serial y los dispositivos
+// que este navegador ya tenía autorizados de visitas anteriores.
+const equipoInfo = { hid: 'hid' in navigator, serie: 'serial' in navigator };
+(async () => {
+  try {
+    const ua = await navigator.userAgentData?.getHighEntropyValues(['platformVersion']);
+    if (ua && navigator.userAgentData.platform === 'Windows') equipoInfo.windows = parseInt(ua.platformVersion) >= 13 ? '11' : '10';
+  } catch {}
+  try {
+    const hids = 'hid' in navigator ? await navigator.hid.getDevices() : [];
+    const ports = 'serial' in navigator ? await navigator.serial.getPorts() : [];
+    const ids = [...hids.map(d => `hid ${hex4(d.vendorId)}:${hex4(d.productId)}`),
+      ...ports.map(p => { const i = p.getInfo(); return `serie ${hex4(i.usbVendorId)}:${hex4(i.usbProductId)}`; })];
+    if (ids.length) equipoInfo.autorizados = ids.slice(0, 6);
+  } catch {}
+})();
 const DEMO = new URLSearchParams(location.search).has('demo');
 const ADMIN_AL_ABRIR = location.hash === '#modoadmin'; // el dashboard no cuenta como visita ni conecta el medidor
 let cableTipo = null;
@@ -445,6 +476,9 @@ function registrar(evento, detalle = {}) {
     vista: $('vistaSimple')?.hidden ? 'tecnica' : 'simple', ...entorno(),
     detalle: dispositivoId ? { dispositivo: dispositivoId, ...detalle } : detalle,
   };
+  // En los errores va el rastro de lo que pasó y qué soporta el equipo, para diagnosticar sin
+  // pedir videos. Se busca por el código de soporte (primeros 6 caracteres de la sesión).
+  if (evento === 'error') cuerpo.detalle = { ...cuerpo.detalle, equipo: equipoInfo, rastro: rastroTexto(900) };
   try {
     fetch(API_USO, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(cuerpo), keepalive: true })
       .catch(() => {});
@@ -476,6 +510,7 @@ function log(tipo, txt) {
   l.className = tipo;
   l.textContent = `${new Date().toLocaleTimeString('es-AR')}  ${{ tx: '→', rx: '←', er: '✕', in: '·' }[tipo]} ${txt}`;
   el.appendChild(l); el.scrollTop = el.scrollHeight;
+  if (tipo !== 'rx') { rastro.push(l.textContent.slice(0, 140)); if (rastro.length > 40) rastro.shift(); }
 }
 function estado(txt, cls) { const e = $('estado'); e.textContent = txt; e.className = 'bx ' + cls; }
 
@@ -489,6 +524,7 @@ function simple(f, msgError) {
   $('sSinFiltro').hidden = $('sSinFiltroNota').hidden = true; // solo los muestra sinMedidor()
   document.querySelectorAll('#vistaSimple [data-fase]').forEach(el => el.hidden = el.dataset.fase !== f);
   if (msgError) $('sError').textContent = msgError;
+  if (f === 'error') $('sCodigo').innerHTML = `Si necesitás ayuda, pasale este código a Prodigy: <b>${CODIGO_SOPORTE}</b>`;
   const n = { desconectado: 1, conectando: 1, error: 1, sinSoporte: 1, conectado: 2, descargando: 2, listo: 3, gracias: 5 }[f];
   ['p1', 'p2', 'p3', 'p4'].forEach((id, i) => $(id).className = 'paso' + (i + 1 < n ? ' ok' : i + 1 === n ? ' on' : ''));
   const foco = document.querySelector(`#vistaSimple [data-fase="${f}"] .bgrande, #vistaSimple [data-fase="${f}"] .bsec`);
@@ -921,7 +957,12 @@ async function descargar() {
   try {
     estado('Descargando…', 'xt'); simple('descargando');
     const r = await comando([READ_RECORDS]);
-    if (r.indexOf(STX) < 0 || r.indexOf(ETX) < 0) throw new Error('Respuesta sin STX/ETX: no la pude interpretar');
+    if (r.indexOf(STX) < 0 || r.indexOf(ETX) < 0) {
+      // Sin bloque STX…ETX no hay mediciones en la respuesta: se anota su forma para el diagnóstico
+      // (¿medidor vacío? ¿otro protocolo?). Tipo 'in' para que entre en el rastro.
+      log('in', `respuesta sin STX/ETX: ${r.length} bytes · ${hex(r.slice(0, 24))}${r.length > 24 ? ' …' : ''}`);
+      throw new Error('Respuesta sin STX/ETX: no la pude interpretar');
+    }
     const res = interpretar(r);
     const juntas = new Map(res.porIndice);
     let intentos = 1, falta = faltantes(juntas);
