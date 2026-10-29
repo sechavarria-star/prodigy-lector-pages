@@ -216,7 +216,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
 
     <section class="panel" data-fase="error" hidden>
       <div class="error-big">
-        <h2 style="font-size:25px;margin-bottom:8px">No pudimos leer el medidor</h2>
+        <h2 id="sErrorT" style="font-size:25px;margin-bottom:8px">No pudimos leer el medidor</h2>
         <p id="sError" style="margin:0"></p>
       </div>
       <p class="nota" id="sCodigo" style="margin:-6px 0 16px"></p>
@@ -517,13 +517,14 @@ function estado(txt, cls) { const e = $('estado'); e.textContent = txt; e.classN
 // ── vista simple ─────────────────────────────────────
 // Una fase a la vez: sinSoporte · desconectado · conectando · conectado · descargando · listo · gracias · error
 let fase = 'desconectado';
-function simple(f, msgError) {
+function simple(f, msgError, tituloError = 'No pudimos leer el medidor') {
   if (f === 'conectando' && fase !== 'conectando') { $('sConectandoT').textContent = 'Buscando el medidor…'; $('sConectandoP').textContent = 'Esperá unos segundos.'; $('sCableAparte').hidden = true; }
   fase = f;
   $('sOtroTipo').hidden = true; // solo lo muestra buscarMedidor() cuando hace falta
   $('sSinFiltro').hidden = $('sSinFiltroNota').hidden = true; // solo los muestra sinMedidor()
   document.querySelectorAll('#vistaSimple [data-fase]').forEach(el => el.hidden = el.dataset.fase !== f);
   if (msgError) $('sError').textContent = msgError;
+  if (f === 'error') $('sErrorT').textContent = tituloError;
   if (f === 'error') $('sCodigo').innerHTML = `Si necesitás ayuda, pasale este código a Prodigy: <b>${CODIGO_SOPORTE}</b>`;
   const n = { desconectado: 1, conectando: 1, error: 1, sinSoporte: 1, conectado: 2, descargando: 2, listo: 3, gracias: 5 }[f];
   ['p1', 'p2', 'p3', 'p4'].forEach((id, i) => $(id).className = 'paso' + (i + 1 < n ? ' ok' : i + 1 === n ? ' on' : ''));
@@ -958,9 +959,18 @@ async function descargar() {
     estado('Descargando…', 'xt'); simple('descargando');
     const r = await comando([READ_RECORDS]);
     if (r.indexOf(STX) < 0 || r.indexOf(ETX) < 0) {
-      // Sin bloque STX…ETX no hay mediciones en la respuesta: se anota su forma para el diagnóstico
-      // (¿medidor vacío? ¿otro protocolo?). Tipo 'in' para que entre en el rastro.
+      // Sin bloque STX…ETX no hay mediciones en la respuesta: se anota su forma para el diagnóstico.
+      // Tipo 'in' para que entre en el rastro.
       log('in', `respuesta sin STX/ETX: ${r.length} bytes · ${hex(r.slice(0, 24))}${r.length > 24 ? ' …' : ''}`);
+      // Medidor sin mediciones guardadas: contesta solo el cierre (EOT, a veces con ETX antes),
+      // sin encabezado ni bloque de datos. Visto en Windows con un V6 nuevo (51850-6225436, 29/10/2026).
+      const util = r.filter(b => b !== 0x00);
+      if (util.length && util.length <= 2 && util.at(-1) === EOT && util.every(b => b === ETX || b === EOT)) {
+        estado('Sin mediciones', 'xw');
+        simple('error', 'Leímos tu medidor, pero no tiene mediciones guardadas. Hacé una medición con una tira y después tocá "Probar de nuevo".', 'Tu medidor no tiene mediciones');
+        registrar('error', { tipo: 'sin_mediciones' });
+        return;
+      }
       throw new Error('Respuesta sin STX/ETX: no la pude interpretar');
     }
     const res = interpretar(r);
