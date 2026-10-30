@@ -125,6 +125,9 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
 .gracias .logo-chip{display:inline-flex;padding:14px 20px;margin-bottom:22px}
 .gracias .logo-chip img{height:52px}
 .gracias h2{font-size:34px}
+.app-mac{background:var(--bg2);border-radius:var(--r);padding:16px 18px;margin-top:18px}
+.app-mac p{margin:0 0 4px}
+.app-mac a.bsec{text-decoration:none;align-items:center}
 .contacto{background:var(--bg2);border-radius:var(--r);padding:16px 18px;margin:18px 0 6px;font-size:18px}
 .contacto b{font-family:var(--mono);font-size:21px;white-space:nowrap}
 @media (max-width:480px){.simple{font-size:18px}.simple h2{font-size:25px}.valor-big{font-size:60px}.paso{font-size:13px}}
@@ -162,6 +165,11 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       </ol>
       <button class="bgrande" id="sBuscar">Buscar mi medidor</button>
       <p class="nota" style="margin-top:16px">La primera vez aparece una ventanita pidiendo permiso: tocá tu medidor (puede figurar como <b>Glucose Meter</b> o <b>USB-Serial Controller</b>) y después <b>Conectar</b> (o <b>Connect</b>). Si no aparece en la lista, cerrá la ventanita: la página lo busca de la otra forma. Si el medidor muestra <b>Lnk</b>, buscalo enseguida: se apaga a los pocos segundos.</p>
+      <div class="app-mac" hidden>
+        <p><b>¿Usás una Mac?</b> Si tu medidor tiene el USB integrado (sin cable aparte), antes instalá la app <b>Lector Prodigy</b>. Se hace una sola vez.</p>
+        <a class="bsec" href="descargas/Lector-Prodigy-Mac.zip" download>Descargar Lector Prodigy para Mac</a>
+        <p class="nota" style="margin-top:10px">Abrí el archivo descargado, arrastrá <b>Lector Prodigy</b> a <b>Aplicaciones</b> y abrila desde ahí. Arriba a la derecha aparece un ícono de gota: ya está lista, volvé a esta página.</p>
+      </div>
     </section>
 
     <section class="panel" data-fase="conectando" hidden>
@@ -223,6 +231,11 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <button class="bgrande" id="sReintentar">Probar de nuevo</button>
       <button class="bsec" id="sOtroTipo">Buscar de la otra forma</button>
       <button class="bsec" id="sSinFiltro" hidden>Mi medidor no aparece en la lista</button>
+      <div class="app-mac" hidden>
+        <p>¿Tu medidor tiene el USB integrado? En Mac hace falta la app <b>Lector Prodigy</b>.</p>
+        <a class="bsec" href="descargas/Lector-Prodigy-Mac.zip" download>Descargar Lector Prodigy para Mac</a>
+        <p class="nota" style="margin-top:10px">Abrí el archivo descargado, arrastrá <b>Lector Prodigy</b> a <b>Aplicaciones</b> y abrila. Cuando aparezca el ícono de gota arriba a la derecha, tocá "Probar de nuevo".</p>
+      </div>
       <p class="nota" id="sSinFiltroNota" hidden style="margin-top:12px">Se abre una lista con todo lo que está enchufado a la computadora. Elegí el que tenga un nombre parecido a <b>Glucose Meter</b>, <b>USB-Serial</b>, <b>USB Serial Port</b> o <b>COM</b>.</p>
     </section>
 
@@ -1410,6 +1423,8 @@ $('bConectarHid').onclick = () => conectar(false, 'hid');
 $('bConectarApp').onclick = () => leerConApp();
 $('sCableAparte').onclick = () => { pedidoApp++; simple('desconectado'); buscarMedidor(['serie']); };
 if (ES_MAC) $('bConectarApp').hidden = false;
+// En Mac el modelo con USB integrado necesita la app Lector Prodigy: se ofrece la descarga.
+if (ES_MAC) document.querySelectorAll('.app-mac').forEach((el) => { el.hidden = false; });
 $('bDesconectar').onclick = desconectar;
 $('bSerie').onclick = leerSerie;
 $('bDescargar').onclick = descargar;
