@@ -166,7 +166,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <button class="bgrande" id="sBuscar">Buscar mi medidor</button>
       <p class="nota" style="margin-top:16px">La primera vez aparece una ventanita pidiendo permiso: tocá tu medidor (puede figurar como <b>Glucose Meter</b> o <b>USB-Serial Controller</b>) y después <b>Conectar</b> (o <b>Connect</b>). Si no aparece en la lista, cerrá la ventanita: la página lo busca de la otra forma. Si el medidor muestra <b>Lnk</b>, buscalo enseguida: se apaga a los pocos segundos.</p>
       <div class="app-mac" hidden>
-        <p><b>¿Usás una Mac?</b> Si tu medidor tiene el USB integrado (sin cable aparte), antes instalá la app <b>Lector Prodigy</b>. Se hace una sola vez.</p>
+        <p><b>¿Usás una Mac?</b> Para leer el medidor en Mac, primero instalá la app <b>Lector Prodigy</b>. Se hace una sola vez.</p>
         <a class="bsec" href="descargas/Lector-Prodigy-Mac.zip" download>Descargar Lector Prodigy para Mac</a>
         <p class="nota" style="margin-top:10px">Abrí el archivo descargado, arrastrá <b>Lector Prodigy</b> a <b>Aplicaciones</b> y abrila desde ahí. Arriba a la derecha aparece un ícono de gota: ya está lista, volvé a esta página.</p>
       </div>
@@ -175,7 +175,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
     <section class="panel" data-fase="conectando" hidden>
       <h2 id="sConectandoT">Buscando el medidor…</h2>
       <p id="sConectandoP">Esperá unos segundos.</p>
-      <button class="bsec" id="sCableAparte" hidden>Mi medidor tiene un cable aparte</button>
+      <button class="bsec" id="sCableAparte" hidden>No lo encuentra: buscar mi medidor de otra forma</button>
     </section>
 
     <section class="panel" data-fase="conectado" hidden>
@@ -232,7 +232,7 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <button class="bsec" id="sOtroTipo">Buscar de la otra forma</button>
       <button class="bsec" id="sSinFiltro" hidden>Mi medidor no aparece en la lista</button>
       <div class="app-mac" hidden>
-        <p>¿Tu medidor tiene el USB integrado? En Mac hace falta la app <b>Lector Prodigy</b>.</p>
+        <p>¿Todavía no instalaste la app <b>Lector Prodigy</b>? En Mac hace falta para leer el medidor.</p>
         <a class="bsec" href="descargas/Lector-Prodigy-Mac.zip" download>Descargar Lector Prodigy para Mac</a>
         <p class="nota" style="margin-top:10px">Abrí el archivo descargado, arrastrá <b>Lector Prodigy</b> a <b>Aplicaciones</b> y abrila. Cuando aparezca el ícono de gota arriba a la derecha, tocá "Probar de nuevo".</p>
       </div>
@@ -708,7 +708,7 @@ async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie'
     if (i > 0 && navigator.userActivation && !navigator.userActivation.isActive) {
       otroTipo = tipo; otroSinFiltro = sinFiltro;
       simple('error', 'No encontramos el medidor en la ventanita. Tocá el botón de abajo para buscarlo de la otra forma.');
-      $('sOtroTipo').textContent = `Buscar mi medidor (${NOMBRE_TIPO[tipo]})`;
+      $('sOtroTipo').textContent = 'Buscar mi medidor de la otra forma';
       $('sOtroTipo').hidden = false;
       return;
     }
@@ -726,7 +726,7 @@ async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie'
 
 function sinMedidor(sinFiltro = false) {
   simple('error', ES_MAC
-    ? 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido. Si tu medidor tiene el USB integrado (sin cable aparte), en Mac hace falta la app Lector Prodigy, o usá una PC con Windows.'
+    ? 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido. En Mac hace falta la app Lector Prodigy (la podés descargar acá abajo), o usá una PC con Windows.'
     : sinFiltro
       ? 'No encontramos el medidor. Si no aparece en ninguna lista, puede que a la computadora le falte el programa (driver) del cable: probá en otra computadora o con otro cable, o comunicate con Prodigy.'
       : 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido (que muestre Lnk o PC) y probá de nuevo.');
@@ -754,8 +754,8 @@ async function conectarHid(soloAutorizado, conSelector) {
       if (!dev) {
         log('er', 'no se eligió ningún medidor (USB integrado)');
         simple('error', ES_MAC
-          ? 'No encontramos el medidor. En computadoras Mac este modelo (con USB integrado) no se puede leer desde el navegador: usá una PC con Windows. Si tu medidor tiene un cable aparte, tocá el botón de abajo.'
-          : 'No se eligió el medidor. Prendelo con el cable puesto (que muestre Lnk) y tocá "Buscar mi medidor" enseguida. Si tu medidor tiene un cable aparte, tocá el botón de abajo.');
+          ? 'No encontramos el medidor. En Mac hace falta la app Lector Prodigy (la podés descargar acá abajo), o usá una PC con Windows.'
+          : 'No se eligió el medidor. Prendelo con el cable puesto (que muestre Lnk) y tocá "Buscar mi medidor" enseguida. Si no aparecía en la lista, tocá el botón de abajo.');
         registrar('error', { tipo: 'sin_hid', mac: ES_MAC });
         return false;
       }
@@ -788,7 +788,7 @@ async function conectarHid(soloAutorizado, conSelector) {
     log('er', 'HID: ' + e.name + ' ' + e.message);
     if (e.name === 'NotFoundError') {
       simple('error', ES_MAC
-        ? 'No encontramos el medidor. En computadoras Mac este modelo (con USB integrado) no se puede leer desde el navegador: usá una PC con Windows.'
+        ? 'No encontramos el medidor. En Mac hace falta la app Lector Prodigy (la podés descargar acá abajo), o usá una PC con Windows.'
         : 'No se eligió el medidor. Prendelo con el cable puesto (que muestre Lnk) y probá de nuevo enseguida.');
       registrar('error', { tipo: 'sin_hid', mac: ES_MAC });
     } else {
