@@ -534,6 +534,7 @@ function simple(f, msgError, tituloError = 'No pudimos leer el medidor') {
   if (f === 'conectando' && fase !== 'conectando') { $('sConectandoT').textContent = 'Buscando el medidor…'; $('sConectandoP').textContent = 'Esperá unos segundos.'; $('sCableAparte').hidden = true; }
   fase = f;
   $('sOtroTipo').hidden = true; // solo lo muestra buscarMedidor() cuando hace falta
+  destacarOtroTipo(false);
   $('sSinFiltro').hidden = $('sSinFiltroNota').hidden = true; // solo los muestra sinMedidor()
   document.querySelectorAll('#vistaSimple [data-fase]').forEach(el => el.hidden = el.dataset.fase !== f);
   if (msgError) $('sError').textContent = msgError;
@@ -692,6 +693,15 @@ async function elegir(tipo, sinFiltro = false) {
 }
 
 let otroSinFiltro = false;
+// En la pantalla de error, "Buscar de la otra forma" pasa a ser el botón grande de arriba cuando
+// es el paso que falta; si no, vuelve a ser secundario debajo de "Probar de nuevo".
+function destacarOtroTipo(si) {
+  const otro = $('sOtroTipo'), reintentar = $('sReintentar');
+  otro.className = si ? 'bgrande' : 'bsec';
+  reintentar.className = si ? 'bsec' : 'bgrande';
+  if (si) { reintentar.before(otro); if (!$('vistaSimple').hidden) otro.focus({ preventScroll: true }); }
+  else reintentar.after(otro);
+}
 async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie'], sinFiltro = false) {
   if (port || hidDev) return;
   // Mac con la app instalada: si ya leyó (o el medidor está enchufado), se usa la app;
@@ -707,9 +717,12 @@ async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie'
     // La 2ª ventanita solo se puede abrir si sigue vivo el gesto del toque; si no, se ofrece un botón.
     if (i > 0 && navigator.userActivation && !navigator.userActivation.isActive) {
       otroTipo = tipo; otroSinFiltro = sinFiltro;
-      simple('error', 'No encontramos el medidor en la ventanita. Tocá el botón de abajo para buscarlo de la otra forma.');
+      // La salida es la otra ventanita, no "Probar de nuevo" (que vuelve a abrir la misma, vacía):
+      // ese botón pasa a ser el principal (visto 06/11/2026: un paciente reintentó 3 veces).
+      simple('error', 'Tu medidor no apareció en la lista. Tocá el botón azul para buscarlo de la otra forma.', 'Falta un paso más');
       $('sOtroTipo').textContent = 'Buscar mi medidor de la otra forma';
       $('sOtroTipo').hidden = false;
+      destacarOtroTipo(true);
       return;
     }
     log('in', `buscando medidor: ${NOMBRE_TIPO[tipo]}${sinFiltro ? ' (sin filtro)' : ''}`);
@@ -878,6 +891,9 @@ function completo(buf, cmd) {
 function comando(bytes, { intentos = INTENTOS, silencioso = false } = {}) {
   const tarea = ocupado.then(async () => {
     for (let i = 0; i < intentos; i++) {
+      // Si se desenchufó en medio de un intento, ya no hay puerto ni dispositivo: cortar con un
+      // mensaje claro en vez de fallar al escribir sobre null.
+      if (!hidDev && !writer) throw new Error('El medidor se desconectó.');
       if (hidDev) {
         const r = await comandoHid(bytes, silencioso);
         if (r.length) {
