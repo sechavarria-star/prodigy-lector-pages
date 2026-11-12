@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Prueba de detección · Lector Prodigy</title>
+<style>
+body{margin:0;background:#060716;color:#fff;font-family:Montserrat,system-ui,sans-serif;font-size:19px;line-height:1.5}
+main{max-width:640px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:26px;margin:0 0 6px}
+p{margin:0 0 16px;color:#c9cbe0}
+button{display:block;width:100%;min-height:64px;margin:14px 0;padding:14px 20px;border:0;border-radius:14px;background:#0090FF;color:#fff;font:600 20px Montserrat,system-ui,sans-serif;cursor:pointer}
+button.sec{background:transparent;border:2px solid #2a2d4a}
+button[hidden]{display:none}
+pre{background:#0d0f24;border:1px solid #2a2d4a;border-radius:12px;padding:14px;font:15px/1.5 'Courier New',monospace;white-space:pre-wrap;word-break:break-word;min-height:120px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Prueba de detección del medidor</h1>
+  <p>Página interna de prueba (Windows + Chrome). Enchufá el medidor, esperá que prenda y tocá el botón azul. Al terminar, sacale una captura a esta pantalla y mandala.</p>
+  <button id="b1">1 · Buscar mi medidor</button>
+  <button id="b2" hidden>2 · Conectar mi medidor</button>
+  <button id="b0" class="sec">Mi medidor no apareció: ver todo lo enchufado</button>
+  <pre id="out">Todavía no se probó nada.</pre>
+</main>
+<script>
+// Prueba: ¿la ventanita de USB genérico (WebUSB) lista los dos tipos de medidor en Windows?
+// Paso 1 identifica el medidor; paso 2 abre la ventanita que corresponde (WebHID o Web Serial)
+// con el filtro exacto. No lee mediciones ni manda nada a ningún servidor.
+const VENDORS_HID = [0x8E14, 0x04D9];                    // chip en el medidor
+const VENDORS_SERIE = [0x067B, 0x1A86, 0x10C4, 0x0403];  // chip en el cable
+const $ = id => document.getElementById(id);
+const hex4 = n => (n || 0).toString(16).padStart(4, '0');
+const lineas = [];
+function anotar(t) { lineas.push(t); $('out').textContent = lineas.join('\n'); }
+let elegido = null;
+
+anotar(`${navigator.userAgent.replace(/^.*?\((.*?)\).*Chrome\/(\d+).*$/, '$1 · Chrome $2')}`);
+anotar(`soporta: usb=${'usb' in navigator} hid=${'hid' in navigator} serie=${'serial' in navigator}`);
+
+async function paso1(sinFiltro) {
+  if (!('usb' in navigator)) return anotar('✕ Este navegador no tiene WebUSB.');
+  const filters = sinFiltro ? [] : [...VENDORS_HID, ...VENDORS_SERIE].map(vendorId => ({ vendorId }));
+  try {
+    const d = await navigator.usb.requestDevice({ filters });
+    const tipo = VENDORS_HID.includes(d.vendorId) ? 'hid' : VENDORS_SERIE.includes(d.vendorId) ? 'serie' : 'desconocido';
+    elegido = { vendorId: d.vendorId, productId: d.productId, tipo };
+    anotar(`PASO 1 OK${sinFiltro ? ' (sin filtro)' : ''}: ${hex4(d.vendorId)}:${hex4(d.productId)} · "${d.productName || ''}" · "${d.manufacturerName || ''}" → tipo ${tipo}`);
+    if (tipo === 'desconocido') return anotar('· No es un fabricante conocido: no hay paso 2.');
+    // ¿Se puede abrir la segunda ventanita sin otro toque?
+    const auto = await paso2(true);
+    if (!auto) { $('b2').hidden = false; anotar('· Tocá el botón "2 · Conectar mi medidor".'); }
+  } catch (e) {
+    anotar(`PASO 1 ✕${sinFiltro ? ' (sin filtro)' : ''}: ${e.name} · ${e.message}`);
+    if (e.name === 'NotFoundError') anotar('· (se cerró la ventanita sin elegir, o la lista estaba vacía)');
+  }
+}
+
+async function paso2(automatico) {
+  const { vendorId, productId, tipo } = elegido;
+  const etiqueta = automatico ? 'PASO 2 automático' : 'PASO 2 con toque';
+  try {
+    if (tipo === 'hid') {
+      const [dev] = await navigator.hid.requestDevice({ filters: [{ vendorId, productId }] });
+      if (!dev) { anotar(`${etiqueta} ✕: no se eligió nada en la ventanita HID`); return false; }
+      await dev.open(); await dev.close();
+      anotar(`${etiqueta} OK (HID): "${dev.productName}" se abrió y se cerró bien`);
+    } else {
+      const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: vendorId, usbProductId: productId }] });
+      await port.open({ baudRate: 9600 }); await port.close();
+      anotar(`${etiqueta} OK (serie): el puerto se abrió y se cerró bien`);
+    }
+    $('b2').hidden = true;
+    anotar('✔ PRUEBA COMPLETA. Sacá la captura.');
+    return true;
+  } catch (e) {
+    anotar(`${etiqueta} ✕: ${e.name} · ${e.message}`);
+    return false;
+  }
+}
+
+$('b1').onclick = () => paso1(false);
+$('b0').onclick = () => paso1(true);
+$('b2').onclick = () => paso2(false);
+</script>
+</body>
+</html>
