@@ -164,12 +164,18 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
         <li>Tocá el botón azul.</li>
       </ol>
       <button class="bgrande" id="sBuscar">Buscar mi medidor</button>
-      <p class="nota" style="margin-top:16px">La primera vez aparece una ventanita pidiendo permiso: tocá tu medidor (puede figurar como <b>Glucose Meter</b> o <b>USB-Serial Controller</b>) y después <b>Conectar</b> (o <b>Connect</b>). Si no aparece en la lista, cerrá la ventanita: la página lo busca de la otra forma. Si el medidor muestra <b>Lnk</b>, buscalo enseguida: se apaga a los pocos segundos.</p>
+      <p class="nota" id="sBuscarNota" style="margin-top:16px">La primera vez aparece una ventanita pidiendo permiso: tocá tu medidor (puede figurar como <b>Glucose Meter</b> o <b>USB-Serial Controller</b>) y después <b>Conectar</b> (o <b>Connect</b>). Si no aparece en la lista, cerrá la ventanita: la página lo busca de la otra forma. Si el medidor muestra <b>Lnk</b>, buscalo enseguida: se apaga a los pocos segundos.</p>
       <div class="app-mac" hidden>
         <p><b>¿Usás una Mac?</b> Para leer el medidor en Mac, primero instalá la app <b>Lector Prodigy</b>. Se hace una sola vez.</p>
         <a class="bsec" href="descargas/Lector-Prodigy-Mac.zip" download>Descargar Lector Prodigy para Mac</a>
         <p class="nota" style="margin-top:10px">Abrí el archivo descargado, arrastrá <b>Lector Prodigy</b> a <b>Aplicaciones</b> y abrila desde ahí. Arriba a la derecha aparece un ícono de gota: ya está lista, volvé a esta página.</p>
       </div>
+    </section>
+
+    <section class="panel" data-fase="encontrado" hidden>
+      <h2><span class="ok-big">✓</span> ¡Encontramos tu medidor!</h2>
+      <p id="sEncontradoP">Falta un paso: tocá el botón azul. Va a aparecer una ventanita más: tocá tu medidor y después <b>Conectar</b>.</p>
+      <button class="bgrande" id="sConectarId">Conectar mi medidor</button>
     </section>
 
     <section class="panel" data-fase="conectando" hidden>
@@ -528,7 +534,7 @@ function log(tipo, txt) {
 function estado(txt, cls) { const e = $('estado'); e.textContent = txt; e.className = 'bx ' + cls; }
 
 // ── vista simple ─────────────────────────────────────
-// Una fase a la vez: sinSoporte · desconectado · conectando · conectado · descargando · listo · gracias · error
+// Una fase a la vez: sinSoporte · desconectado · encontrado · conectando · conectado · descargando · listo · gracias · error
 let fase = 'desconectado';
 function simple(f, msgError, tituloError = 'No pudimos leer el medidor') {
   if (f === 'conectando' && fase !== 'conectando') { $('sConectandoT').textContent = 'Buscando el medidor…'; $('sConectandoP').textContent = 'Esperá unos segundos.'; $('sCableAparte').hidden = true; }
@@ -540,7 +546,7 @@ function simple(f, msgError, tituloError = 'No pudimos leer el medidor') {
   if (msgError) $('sError').textContent = msgError;
   if (f === 'error') $('sErrorT').textContent = tituloError;
   if (f === 'error') $('sCodigo').innerHTML = `Si necesitás ayuda, pasale este código a Prodigy: <b>${CODIGO_SOPORTE}</b>`;
-  const n = { desconectado: 1, conectando: 1, error: 1, sinSoporte: 1, conectado: 2, descargando: 2, listo: 3, gracias: 5 }[f];
+  const n = { desconectado: 1, encontrado: 1, conectando: 1, error: 1, sinSoporte: 1, conectado: 2, descargando: 2, listo: 3, gracias: 5 }[f];
   ['p1', 'p2', 'p3', 'p4'].forEach((id, i) => $(id).className = 'paso' + (i + 1 < n ? ' ok' : i + 1 === n ? ' on' : ''));
   const foco = document.querySelector(`#vistaSimple [data-fase="${f}"] .bgrande, #vistaSimple [data-fase="${f}"] .bsec`);
   if (foco && !$('vistaSimple').hidden) foco.focus({ preventScroll: true });
@@ -737,6 +743,63 @@ async function buscarMedidor(orden = ES_MAC ? ['serie', 'hid'] : ['hid', 'serie'
   sinMedidor(sinFiltro);
 }
 
+// ── Identificar primero (Windows) ────────────────────
+// La ventanita de USB genérico (WebUSB) lista los dos tipos de medidor, así que nunca sale vacía
+// con el medidor enchufado (probado en Windows 10 + Chrome 157 con 8e14:0900 y 067b:2303,
+// 13/11/2026). No sirve para leerlo, pero dice cuál es: después se abre la ventanita que
+// corresponde (WebHID o Web Serial) con el filtro exacto. Esa segunda ventanita necesita un toque
+// nuevo, salvo que el usuario haya elegido rápido y siga vivo el gesto del primero.
+const USB_FILTROS = [...HID_FILTROS, ...FILTROS.map(f => ({ vendorId: f.usbVendorId }))];
+const IDENTIFICA_PRIMERO = !ES_MAC && 'usb' in navigator;
+let identificado = null; // { tipo: 'hid' | 'serie', vendorId, productId }
+
+async function buscarIdentificando() {
+  if (port || hidDev) return;
+  // Medidor ya autorizado en este navegador: se conecta sin ventanitas.
+  try {
+    const yaHid = 'hid' in navigator && (await navigator.hid.getDevices()).some(esMedidorHid);
+    const yaSerie = 'serial' in navigator && (await navigator.serial.getPorts()).length > 0;
+    if (yaHid || yaSerie) return conectar(true);
+  } catch {}
+  log('in', 'identificando medidor (lista USB)');
+  let d = null;
+  try { d = await navigator.usb.requestDevice({ filters: USB_FILTROS }); }
+  catch (e) { if (e.name !== 'NotFoundError') log('er', `lista USB: ${e.name} ${e.message}`); }
+  if (!d) { log('in', 'no se eligió nada en la lista USB'); return sinMedidor(); }
+  const tipo = HID_FILTROS.some(f => f.vendorId === d.vendorId) ? 'hid' : 'serie';
+  identificado = { tipo, vendorId: d.vendorId, productId: d.productId };
+  anotarDispositivo(tipo, d.vendorId, d.productId, d.productName);
+  if (!(tipo === 'hid' ? 'hid' in navigator : 'serial' in navigator)) return sinMedidor();
+  // Sin gesto vivo no se puede abrir la segunda ventanita: se pide el toque con un botón solo.
+  if (navigator.userActivation && !navigator.userActivation.isActive) return pedirConectar();
+  return conectarIdentificado();
+}
+
+function pedirConectar(repetir = false) {
+  simple('encontrado');
+  $('sEncontradoP').innerHTML = repetir
+    ? 'No se eligió el medidor en la ventanita. Tocá el botón azul de nuevo, tocá tu medidor en la lista y después <b>Conectar</b>.'
+    : 'Falta un paso: tocá el botón azul. Va a aparecer una ventanita más: tocá tu medidor y después <b>Conectar</b>.';
+}
+
+async function conectarIdentificado() {
+  if (port || hidDev || !identificado) return;
+  const { tipo, vendorId, productId } = identificado;
+  log('in', `conectando el medidor identificado: ${NOMBRE_TIPO[tipo]}`);
+  let elegido = null;
+  try {
+    if (tipo === 'hid') elegido = hidElegido = (await navigator.hid.requestDevice({ filters: [{ vendorId, productId }] }))[0] || null;
+    else elegido = puertoElegido = await navigator.serial.requestPort({ filters: [{ usbVendorId: vendorId, usbProductId: productId }] });
+  } catch (e) {
+    if (e.name === 'SecurityError') return pedirConectar();          // venció el gesto
+    if (e.name !== 'NotFoundError') log('er', `selector ${tipo}: ${e.name} ${e.message}`);
+  }
+  if (!elegido) return pedirConectar(true);
+  ultimoTipo = tipo;
+  if (tipo === 'hid') await conectarHid(true, false);
+  else await conectar(true, 'auto');
+}
+
 function sinMedidor(sinFiltro = false) {
   simple('error', ES_MAC
     ? 'No encontramos el medidor. Revisá que el cable esté enchufado y el medidor prendido. En Mac hace falta la app Lector Prodigy (la podés descargar acá abajo), o usá una PC con Windows.'
@@ -875,7 +938,7 @@ async function desconectar() {
   port = reader = writer = null;
   if (hidDev) { try { hidDev.oninputreport = null; await hidDev.close(); } catch {} hidDev = null; hidPedido = null; }
   ui(false); log('in', 'puerto cerrado');
-  if (!['listo', 'gracias', 'error'].includes(fase)) simple('desconectado');
+  if (!['listo', 'gracias', 'error', 'encontrado'].includes(fase)) simple('desconectado');
 }
 
 const espera = ms => new Promise(r => setTimeout(r, ms));
@@ -1452,7 +1515,9 @@ $('bJson').onclick = copiarJson;
 $('bPdf').onclick = () => generarPdf();
 $('bPdfDescargar').onclick = () => descargarPdf({ boton: $('bPdfDescargar') });
 $('selPeriodo').onchange = infoPeriodo;
-$('sBuscar').onclick = () => buscarMedidor();
+$('sBuscar').onclick = () => (IDENTIFICA_PRIMERO ? buscarIdentificando() : buscarMedidor());
+$('sConectarId').onclick = () => conectarIdentificado();
+if (IDENTIFICA_PRIMERO) $('sBuscarNota').innerHTML = 'La primera vez aparece una ventanita con una lista: tocá tu medidor (puede figurar como <b>Glucose Meter</b> o <b>USB-Serial Controller</b>) y después <b>Conectar</b>. La página te lo va a pedir dos veces seguidas: es normal. Si el medidor muestra <b>Lnk</b>, buscalo enseguida: se apaga a los pocos segundos.';
 $('sOtroTipo').onclick = async () => { if (port || hidDev) await desconectar(); buscarMedidor([otroTipo], otroSinFiltro); };
 $('sSinFiltro').onclick = async () => { if (port || hidDev) await desconectar(); buscarMedidor(undefined, true); };
 $('sLeer').onclick = descargar;
@@ -1474,7 +1539,7 @@ $('sTerminar').onclick = async () => { if (port || hidDev) await desconectar(); 
 $('sNombre').oninput = e => guardarNombre(e.target.value);
 $('inNombre').oninput = e => guardarNombre(e.target.value);
 $('sOtraVez').onclick = async () => { await desconectar(); simple('desconectado'); };
-$('sReintentar').onclick = async () => { if (port || hidDev) await desconectar(); buscarMedidor(); };
+$('sReintentar').onclick = async () => { if (port || hidDev) await desconectar(); IDENTIFICA_PRIMERO ? buscarIdentificando() : buscarMedidor(); };
 $('aTecnico').onclick = () => verVista(true);
 $('aSimple').onclick = () => verVista(false);
 $('bLimpiar').onclick = () => $('log').replaceChildren();
