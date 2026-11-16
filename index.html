@@ -129,6 +129,10 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
 .app-mac p{margin:0 0 4px}
 .app-mac a.bsec{text-decoration:none;align-items:center}
 .opinion{border-top:1px solid var(--b);margin-top:22px;padding-top:20px}
+.dlg-opinion{margin:auto;background:var(--bg);color:var(--tx);border:1px solid var(--b);border-radius:18px;padding:24px 22px;width:min(520px,calc(100vw - 32px));box-sizing:border-box;text-align:center;font-size:19px}
+.dlg-opinion::backdrop{background:rgba(3,4,12,.72)}
+.dlg-opinion .opinion{border-top:none;margin-top:0;padding-top:0}
+.dlg-opinion .opinion-t{font-size:22px}
 .opinion-t{font-weight:700;margin:0 0 10px}
 .estrellas{display:flex;justify-content:center;gap:6px}
 .estrella{width:60px;height:60px;border:none;background:transparent;color:var(--mt2);font-size:50px;line-height:1;cursor:pointer;padding:0;border-radius:12px;transition:.12s}
@@ -274,7 +278,11 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <p class="nota" id="sSinFiltroNota" hidden style="margin-top:12px">Se abre una lista con todo lo que está enchufado a la computadora. Elegí el que tenga un nombre parecido a <b>Glucose Meter</b>, <b>USB-Serial</b>, <b>USB Serial Port</b> o <b>COM</b>.</p>
     </section>
 
-    <div class="pie"><button class="link" id="aTecnico">Modo técnico</button></div>
+    <div class="pie"><button class="link" id="aOpinar">Dejanos tu opinión sobre el lector</button></div>
+    <dialog id="dlgOpinion" class="dlg-opinion" aria-label="Tu opinión sobre el lector">
+      <div id="dlgOpinionCuerpo"></div>
+      <button class="bsec" id="dlgOpinionCerrar">Cerrar</button>
+    </dialog>
   </main>
 
   <div id="vistaTecnica" hidden>
@@ -1137,7 +1145,9 @@ function finalizarLectura(juntas, falta, intentos, res) {
     const fechas = mediciones.map(m => m.fecha).sort();
     registrar('lectura', { cantidad: mediciones.length, desde: fechas[0] || null, hasta: fechas.at(-1) || null, unidad: mediciones[0]?.unidad || null,
       faltan: falta, lecturas: intentos, bloques: res.bloques, bytes: res.bytes, danadas: res.corruptas })
-      ?.then(j => { if (j?.pedir_opinion) pedirOpinion(); });
+      ?.then(j => {   // si ya opinó en esta visita (por el link), se anota para este medidor y no se vuelve a preguntar
+        if (j?.pedir_opinion) opinionEstrellas ? registrar('opinion', { estrellas: opinionEstrellas }) : pedirOpinion();
+      });
     if (incompleta) registrar('error', { tipo: 'lectura_incompleta', faltan: falta });
 }
 
@@ -1503,7 +1513,8 @@ function verVista(tecnica) {
   window.scrollTo(0, 0);
 }
 let vistaGuardada = null; try { vistaGuardada = localStorage.getItem(VISTA_KEY); } catch {}
-verVista(new URLSearchParams(location.search).has('tecnico') || vistaGuardada === 'tecnica');
+// El modo técnico ya no se ofrece en la página: solo se entra con ?tecnico en la dirección (soporte).
+verVista(new URLSearchParams(location.search).has('tecnico'));
 
 // ?demo carga mediciones ficticias para probar la página sin medidor
 if (new URLSearchParams(location.search).has('demo')) {
@@ -1612,10 +1623,21 @@ $('sNombre').oninput = e => guardarNombre(e.target.value);
 $('inNombre').oninput = e => guardarNombre(e.target.value);
 $('sOtraVez').onclick = async () => { await desconectar(); simple('desconectado'); };
 $('sReintentar').onclick = async () => { if (port || hidDev) await desconectar(); IDENTIFICA_PRIMERO ? buscarIdentificando() : buscarMedidor(); };
-$('aTecnico').onclick = () => verVista(true);
+// Opinión en cualquier momento: el mismo bloque del paso 4, dentro de una ventana.
+$('aOpinar').onclick = () => {
+  const bloque = $('sOpinion');
+  $('dlgOpinionCuerpo').append(bloque); bloque.hidden = false;
+  $('dlgOpinion').showModal();
+};
+$('dlgOpinionCerrar').onclick = () => $('dlgOpinion').close();
+$('dlgOpinion').onclose = () => {   // vuelve a su lugar en el paso 4
+  const bloque = $('sOpinion');
+  document.querySelector('#vistaSimple [data-fase="gracias"] .contacto').before(bloque);
+  bloque.hidden = !opinionPedida;
+};
 $('aSimple').onclick = () => verVista(false);
 $('bLimpiar').onclick = () => $('log').replaceChildren();
 </script>
-<script src="admin.js?v=20261116a"></script>
+<script src="admin.js?v=20261116b"></script>
 </body>
 </html>

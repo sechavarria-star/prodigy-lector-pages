@@ -35,8 +35,7 @@
       if (leerClave()) cargar(); else mostrarLogin();
     } else {
       $('estado').hidden = false;
-      let v = null; try { v = localStorage.getItem('lector-autocode:vista'); } catch {}
-      verVista(v === 'tecnica');
+      verVista(new URLSearchParams(location.search).has('tecnico'));
     }
   }
 
