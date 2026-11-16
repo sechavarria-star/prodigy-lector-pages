@@ -10,7 +10,7 @@
 (() => {
   const CLAVE_KEY = 'lector-autocode:admin';
   const EVENTOS = { pagina_abierta: 'Abrió la página', conectado: 'Conectó el medidor', lectura: 'Leyó las mediciones',
-    reporte_pdf: 'Generó el reporte', gracias: 'Llegó al final', error: 'Error' };
+    reporte_pdf: 'Generó el reporte', gracias: 'Llegó al final', opinion: 'Dejó su opinión', error: 'Error' };
   const ERRORES = { sin_puerto: 'No eligió el medidor', puerto_ocupado: 'Puerto ocupado', no_responde_serie: 'El medidor no responde',
     descarga: 'Falló la lectura', conexion: 'Error al conectar', sin_hid: 'No eligió el medidor (USB integrado)',
     conexion_hid: 'Error al conectar (USB integrado)', pdf_descarga: 'Falló la descarga del PDF', lectura_incompleta: 'Lectura incompleta', otro: 'Otro' };
@@ -72,7 +72,7 @@
 
   // ── pintar ───────────────────────────────────────────
   function pintar(d) {
-    const k = d.kpis || {};
+    const k = d.kpis || {}, op = d.opinion || {};
     const conv = k.sesiones ? Math.round(100 * k.sesiones_con_lectura / k.sesiones) : 0;
     const tiles = [
       ['Visitas', num(k.sesiones), 'sesiones distintas', '--blue'],
@@ -81,6 +81,7 @@
       ['Reportes PDF', num(k.reportes), 'generados', '--ok'],
       ['Conversión', `${conv}%`, 'de las visitas leyó el medidor', '--blue'],
       ['Errores', num(k.errores), 'en el período', k.errores ? '--wa' : '--mt'],
+      ['Opinión', op.votos ? `${String(op.promedio).replace('.', ',')} ★` : '—', `${num(op.votos)} votos`, '--yl'],
     ];
     $('admKpis').innerHTML = tiles.map(([l, v, s, c]) =>
       `<div class="kpi" style="--accent:var(${c})"><div class="kpi-lbl">${l}</div><div class="kpi-val">${v}</div><div class="kpi-sub">${s}</div></div>`).join('');
@@ -99,6 +100,16 @@
     const v = d.vistas || {};
     $('admVistas').textContent = `Vista simple: ${num(v.simple)} · técnica: ${num(v.tecnica)} sesiones`;
 
+    const maxVotos = Math.max(1, ...(op.estrellas || []).map(e => e.votos));
+    $('admOpinionTotal').textContent = op.votos ? `${num(op.votos)} votos · promedio ${String(op.promedio).replace('.', ',')} de 5` : 'Sin votos en el período';
+    $('admOpinionBarras').innerHTML = (op.estrellas || []).map(e => `<div class="emb"><div class="emb-l">${'★'.repeat(e.estrellas)}</div>
+        <div class="emb-b"><span style="width:${Math.round(100 * e.votos / maxVotos)}%"></span></div>
+        <div class="emb-v">${num(e.votos)}</div></div>`).join('');
+    $('admOpiniones').innerHTML = (op.comentarios || []).length
+      ? op.comentarios.map(c => `<tr><td class="mono">${fechaHora(c.creado)}</td><td>${'★'.repeat(Math.min(5, Math.max(0, +c.estrellas || 0)))}</td>
+          <td>${esc(c.comentario)}</td><td class="mono">${esc(c.serie || '—')}</td><td>${esc(c.sistema || '—')}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="vacio">Sin comentarios en el período.</td></tr>';
+
     $('admEquipos').innerHTML = (d.equipos || []).length
       ? d.equipos.map(e => `<tr><td class="mono">${esc(e.serie)}</td><td>${esc(e.cable || '—')}</td>
           <td class="num">${e.mediciones_guardadas ?? '—'}</td><td class="mono">${fechaCorta(e.medicion_mas_vieja)} → ${fechaCorta(e.medicion_mas_nueva)}</td>
@@ -110,6 +121,7 @@
       ? d.ultimos.map(u => {
           const det = u.evento === 'lectura' ? `${num(u.detalle?.cantidad)} mediciones${u.detalle?.faltan ? ` · faltan ${num(u.detalle.faltan)}` : ''}`
             : u.evento === 'reporte_pdf' ? `${num(u.detalle?.mediciones)} mediciones · ${num(u.detalle?.dias)} días`
+            : u.evento === 'opinion' ? `${'★'.repeat(Math.min(5, Math.max(0, +u.detalle?.estrellas || 0)))} ${u.detalle?.comentario || ''}`
             : u.evento === 'error' ? (ERRORES[u.detalle?.tipo] || u.detalle?.tipo || '') : '';
           const cls = u.evento === 'error' ? 'xw' : u.evento === 'reporte_pdf' || u.evento === 'gracias' ? 'xg' : u.evento === 'lectura' ? 'xt' : 'xb';
           return `<tr><td class="mono">${fechaHora(u.creado)}</td><td><span class="bx ${cls}">${esc(EVENTOS[u.evento] || u.evento)}</span></td>

@@ -128,6 +128,18 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
 .app-mac{background:var(--bg2);border-radius:var(--r);padding:16px 18px;margin-top:18px}
 .app-mac p{margin:0 0 4px}
 .app-mac a.bsec{text-decoration:none;align-items:center}
+.opinion{border-top:1px solid var(--b);margin-top:22px;padding-top:20px}
+.opinion-t{font-weight:700;margin:0 0 10px}
+.estrellas{display:flex;justify-content:center;gap:6px}
+.estrella{width:60px;height:60px;border:none;background:transparent;color:var(--mt2);font-size:50px;line-height:1;cursor:pointer;padding:0;border-radius:12px;transition:.12s}
+.estrella.on{color:var(--yl)}
+.estrella:hover,.estrella:focus-visible{transform:scale(1.12);outline:none}
+.estrella:focus-visible{box-shadow:0 0 0 3px var(--blue-a)}
+.opinion label{display:block;margin:18px 0 8px}
+.opinion textarea{display:block;width:100%;box-sizing:border-box;min-height:96px;resize:vertical;background:var(--bg2);border:2px solid var(--b);border-radius:14px;color:var(--tx);padding:12px 14px;font-family:'Montserrat',sans-serif;font-size:18px}
+.opinion textarea:focus{outline:none;border-color:var(--blue)}
+.opinion .nota{margin:8px 0 0}
+@media (max-width:420px){.estrella{width:50px;height:50px;font-size:42px}}
 .contacto{background:var(--bg2);border-radius:var(--r);padding:16px 18px;margin:18px 0 6px;font-size:18px}
 .contacto b{font-family:var(--mono);font-size:21px;white-space:nowrap}
 @media (max-width:480px){.simple{font-size:18px}.simple h2{font-size:25px}.valor-big{font-size:60px}.paso{font-size:13px}}
@@ -223,6 +235,23 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       <h2>¡Gracias por usar el lector de Prodigy!</h2>
       <p id="sGraciasTexto">Tu reporte quedó guardado en la computadora. Llevalo o mandáselo a tu médico en la próxima consulta.</p>
       <p>Seguí midiéndote como te indicó tu médico: cada medición suma.</p>
+      <div class="opinion" id="sOpinion" hidden>
+        <p class="opinion-t">¿Cómo te resultó usar el lector?</p>
+        <div class="estrellas" id="sEstrellas" role="radiogroup" aria-label="Calificación de 1 a 5 estrellas">
+          <button type="button" class="estrella" role="radio" aria-checked="false" data-n="1" aria-label="1 estrella">★</button>
+          <button type="button" class="estrella" role="radio" aria-checked="false" data-n="2" aria-label="2 estrellas">★</button>
+          <button type="button" class="estrella" role="radio" aria-checked="false" data-n="3" aria-label="3 estrellas">★</button>
+          <button type="button" class="estrella" role="radio" aria-checked="false" data-n="4" aria-label="4 estrellas">★</button>
+          <button type="button" class="estrella" role="radio" aria-checked="false" data-n="5" aria-label="5 estrellas">★</button>
+        </div>
+        <p class="nota" id="sOpinionEstado" aria-live="polite">Tocá una estrella: 1 es malo y 5 es excelente.</p>
+        <div id="sOpinionMas" hidden>
+          <label for="sOpinionTexto">¿Querés contarnos algo más? (opcional)</label>
+          <textarea id="sOpinionTexto" maxlength="500" rows="3"></textarea>
+          <p class="nota">No escribas datos personales ni de salud.</p>
+          <button class="bsec" id="sOpinionEnviar">Enviar comentario</button>
+        </div>
+      </div>
       <div class="contacto">¿Dudas con el medidor? Servicio al cliente de Prodigy<br><b>+54 9 11 6409-6023</b></div>
       <button class="bsec" id="sOtraVezPdf">Volver a descargar el reporte</button>
       <button class="bsec" id="sTerminar">Terminar</button>
@@ -387,6 +416,13 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
       </div>
 
       <div class="card">
+        <div class="adm-barra" style="margin-bottom:6px"><div class="sec" style="margin:0">Opiniones</div><span id="admOpinionTotal" class="kpi-sub"></span></div>
+        <div id="admOpinionBarras"></div>
+        <div class="tbl-wrap" style="margin-top:10px"><table class="tbl"><thead><tr><th>Cuándo</th><th>Estrellas</th><th>Comentario</th><th>Serie</th><th>Sistema</th></tr></thead>
+          <tbody id="admOpiniones"></tbody></table></div>
+      </div>
+
+      <div class="card">
         <div class="sec">Medidores</div>
         <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Serie</th><th>Cable</th><th class="num">Mediciones</th><th>Rango guardado</th>
           <th class="num">Conexiones</th><th class="num">Lecturas</th><th class="num">Reportes</th><th>Primera vez</th><th>Última vez</th></tr></thead>
@@ -499,8 +535,8 @@ function registrar(evento, detalle = {}) {
   // pedir videos. Se busca por el código de soporte (primeros 6 caracteres de la sesión).
   if (evento === 'error') cuerpo.detalle = { ...cuerpo.detalle, equipo: equipoInfo, rastro: rastroTexto(900) };
   try {
-    fetch(API_USO, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(cuerpo), keepalive: true })
-      .catch(() => {});
+    return fetch(API_USO, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(cuerpo), keepalive: true })
+      .then(r => r.json()).catch(() => null);
   } catch {}
 }
 
@@ -1100,7 +1136,8 @@ function finalizarLectura(juntas, falta, intentos, res) {
     pintarSimple(); simple('listo');
     const fechas = mediciones.map(m => m.fecha).sort();
     registrar('lectura', { cantidad: mediciones.length, desde: fechas[0] || null, hasta: fechas.at(-1) || null, unidad: mediciones[0]?.unidad || null,
-      faltan: falta, lecturas: intentos, bloques: res.bloques, bytes: res.bytes, danadas: res.corruptas });
+      faltan: falta, lecturas: intentos, bloques: res.bloques, bytes: res.bytes, danadas: res.corruptas })
+      ?.then(j => { if (j?.pedir_opinion) pedirOpinion(); });
     if (incompleta) registrar('error', { tipo: 'lectura_incompleta', faltan: falta });
 }
 
@@ -1525,7 +1562,42 @@ const GRACIAS_TEXTO = {
   pdf: 'Tu reporte quedó guardado en la computadora. Llevalo o mandáselo a tu médico en la próxima consulta.',
   whatsapp: 'Te mandamos el reporte por WhatsApp desde el número de Prodigy. Reenviáselo a tu médico o mostráselo en la próxima consulta.',
 };
-const alGracias = (modo = 'pdf') => { $('sGraciasTexto').textContent = GRACIAS_TEXTO[modo]; simple('gracias'); registrar('gracias'); };
+// Opinión (5 estrellas + comentario opcional). El servidor decide por medidor cuándo preguntar:
+// en la 1ª lectura, cada 10 si no respondió, y de nuevo a los 6 meses de haber respondido.
+let opinionPedida = false, opinionEstrellas = 0, opinionComentada = false;
+function pintarEstrellas() {
+  document.querySelectorAll('#sEstrellas .estrella').forEach(b => {
+    const n = +b.dataset.n;
+    b.classList.toggle('on', n <= opinionEstrellas);
+    b.setAttribute('aria-checked', String(n === opinionEstrellas));
+  });
+}
+function pedirOpinion() {   // toca preguntarle a este medidor: se arranca de cero
+  opinionPedida = true; opinionEstrellas = 0; opinionComentada = false; pintarEstrellas();
+  $('sOpinionEstado').textContent = 'Tocá una estrella: 1 es malo y 5 es excelente.';
+  $('sOpinionMas').hidden = true; $('sOpinionTexto').value = '';
+}
+document.querySelectorAll('#sEstrellas .estrella').forEach(b => b.onclick = () => {
+  opinionEstrellas = +b.dataset.n; pintarEstrellas();
+  registrar('opinion', { estrellas: opinionEstrellas });
+  $('sOpinionEstado').textContent = '¡Gracias! Guardamos tu voto.';
+  if (!opinionComentada) $('sOpinionMas').hidden = false;
+});
+$('sOpinionEnviar').onclick = () => {
+  const comentario = $('sOpinionTexto').value.trim().slice(0, 500);
+  if (!comentario) return $('sOpinionTexto').focus();
+  registrar('opinion', { estrellas: opinionEstrellas, comentario });
+  opinionComentada = true;
+  $('sOpinionMas').hidden = true;
+  $('sOpinionEstado').textContent = '¡Gracias por tu opinión!';
+};
+const alGracias = (modo = 'pdf') => {
+  $('sGraciasTexto').textContent = GRACIAS_TEXTO[modo];
+  $('sOpinion').hidden = !opinionPedida;
+  simple('gracias');
+  // Se avisa que la pregunta se mostró sin respuesta: así el servidor la repite recién en 10 lecturas.
+  registrar('gracias', opinionPedida && !opinionEstrellas ? { opinion_mostrada: true } : {});
+};
 $('sPdf').onclick = () => descargarPdf({ periodo: periodoSimple(), nombre: $('sNombre').value, boton: $('sPdf'), alTerminar: alGracias });
 $('sWaAbrir').onclick = () => { $('sWa').hidden = false; $('sWaAbrir').hidden = true; $('sWaNumero').focus(); };
 $('sWaEnviar').onclick = () => enviarWhatsApp({ periodo: periodoSimple(), nombre: $('sNombre').value, numero: $('sWaNumero').value,
@@ -1544,6 +1616,6 @@ $('aTecnico').onclick = () => verVista(true);
 $('aSimple').onclick = () => verVista(false);
 $('bLimpiar').onclick = () => $('log').replaceChildren();
 </script>
-<script src="admin.js?v=20261021d"></script>
+<script src="admin.js?v=20261116a"></script>
 </body>
 </html>
