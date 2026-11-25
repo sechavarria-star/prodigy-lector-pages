@@ -28,6 +28,7 @@
   function rutear() {
     const admin = esAdmin();
     $('vistaAdmin').hidden = !admin;
+    document.body.classList.toggle('modo-admin', admin);
     if (admin) {
       $('vistaSimple').hidden = true; $('vistaTecnica').hidden = true;
       document.body.classList.remove('vista-simple');
