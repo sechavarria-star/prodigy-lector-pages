@@ -32,8 +32,9 @@
       $('vistaSimple').hidden = true; $('vistaTecnica').hidden = true;
       document.body.classList.remove('vista-simple');
       $('estado').hidden = true;
-      if (leerClave()) cargar(); else mostrarLogin();
+      if (leerClave()) cargar().then(badgeHandoff); else mostrarLogin();
     } else {
+      pararPolls();
       $('estado').hidden = false;
       verVista(new URLSearchParams(location.search).has('tecnico'));
     }
@@ -60,6 +61,7 @@
       if (!r.ok || !j.ok) throw new Error(j.error || r.status);
       $('admLogin').hidden = true; $('admPanel').hidden = false;
       pintar(j.datos);
+      cargadas.lector = dias;
       $('admEstado').textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
     } catch (e) {
       if (!$('admPanel').hidden) $('admEstado').textContent = 'No se pudo actualizar.';
@@ -131,8 +133,29 @@
 
   // Barras: visitas por día (una sola serie). Tooltip con visitas, lecturas y reportes.
   function pintarPorDia(filas) {
-    const cont = $('admPorDia');
-    const max = Math.max(1, ...filas.map(f => f.sesiones));
+    barras($('admPorDia'), filas, 'sesiones', 'Visitas por día',
+      f => `<b>${fechaCorta(f.dia)}</b><br>${num(f.sesiones)} visitas · ${num(f.lecturas)} lecturas · ${num(f.reportes)} reportes`);
+    $('admPorDiaTotal').textContent = filas.length ? `${num(filas.reduce((a, f) => a + f.sesiones, 0))} visitas en ${filas.length} días` : '';
+  }
+
+  // Más de 120 días: se agrupa por semana (lunes) para que las barras se lean.
+  function porSemana(filas, campos) {
+    if (filas.length <= 120) return filas;
+    const out = [];
+    filas.forEach(f => {
+      const d = new Date(String(f.dia).slice(0, 10) + 'T12:00:00');
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      const k = d.toISOString().slice(0, 10);
+      let s = out[out.length - 1];
+      if (!s || s.dia !== k) { s = { dia: k, semana: true }; campos.forEach(c => s[c] = 0); out.push(s); }
+      campos.forEach(c => s[c] += Number(f[c] || 0));
+    });
+    return out;
+  }
+
+  // Gráfico de barras genérico (una serie, campo `campo`); `tip(fila)` arma el tooltip.
+  function barras(cont, filas, campo, aria, tip) {
+    const max = Math.max(1, ...filas.map(f => f[campo]));
     const W = 720, H = 200, x0 = 34, x1 = W - 6, y0 = 10, y1 = H - 24;
     const n = filas.length || 1, paso = (x1 - x0) / n, ancho = Math.max(2, paso - 2);
     const tope = Math.max(4, Math.ceil(max / 4) * 4);
@@ -144,8 +167,8 @@
     }
     const cadaEtiqueta = Math.ceil(n / 8);
     filas.forEach((f, i) => {
-      const x = x0 + i * paso + 1, y = sy(f.sesiones), h = y1 - y;
-      if (f.sesiones > 0) {
+      const x = x0 + i * paso + 1, y = sy(f[campo]), h = y1 - y;
+      if (f[campo] > 0) {
         const r = Math.min(4, ancho / 2, h);
         g += `<path class="barra" d="M${x},${y1} V${y + r} Q${x},${y} ${x + r},${y} H${x + ancho - r} Q${x + ancho},${y} ${x + ancho},${y + r} V${y1} Z"/>`;
       }
@@ -155,19 +178,26 @@
       if (etiqueta) g += `<text x="${(x + ancho / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="eje">${fechaCorta(f.dia).slice(0, 5)}</text>`;
     });
     g += `<line x1="${x0}" x2="${x1}" y1="${y1}" y2="${y1}" class="base"/>`;
-    cont.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Visitas por día">${g}</svg><div class="tip" hidden></div>`;
-    const tip = cont.querySelector('.tip');
+    cont.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(aria)}">${g}</svg><div class="tip" hidden></div>`;
+    const caja = cont.querySelector('.tip');
     cont.querySelectorAll('.hit').forEach(r => {
       r.addEventListener('mouseenter', () => {
-        const f = filas[+r.dataset.i];
-        tip.innerHTML = `<b>${fechaCorta(f.dia)}</b><br>${num(f.sesiones)} visitas · ${num(f.lecturas)} lecturas · ${num(f.reportes)} reportes`;
-        tip.hidden = false;
+        caja.innerHTML = tip(filas[+r.dataset.i]);
+        caja.hidden = false;
         const bx = r.getBoundingClientRect(), cx = cont.getBoundingClientRect();
-        tip.style.left = Math.min(Math.max(bx.left - cx.left + bx.width / 2, 90), cx.width - 90) + 'px';
+        caja.style.left = Math.min(Math.max(bx.left - cx.left + bx.width / 2, 90), cx.width - 90) + 'px';
       });
-      r.addEventListener('mouseleave', () => { tip.hidden = true; });
+      r.addEventListener('mouseleave', () => { caja.hidden = true; });
     });
-    $('admPorDiaTotal').textContent = filas.length ? `${num(filas.reduce((a, f) => a + f.sesiones, 0))} visitas en ${filas.length} días` : '';
+  }
+
+  // Barras horizontales simples (canal, origen): [{etiqueta, n}].
+  function barrasH(cont, filas, vacio) {
+    const max = Math.max(1, ...filas.map(f => f.n)), tot = filas.reduce((a, f) => a + f.n, 0);
+    cont.innerHTML = filas.length ? filas.map(f => `<div class="emb"><div class="emb-l">${esc(f.etiqueta)}</div>
+      <div class="emb-b"><span style="width:${Math.round(100 * f.n / max)}%"></span></div>
+      <div class="emb-v">${num(f.n)} <small>${tot ? Math.round(100 * f.n / tot) + '%' : ''}</small></div></div>`).join('')
+      : `<div class="vacio">${vacio}</div>`;
   }
 
   // Embudo: sesiones que llegaron a cada paso, en % de las que abrieron la página.
@@ -181,15 +211,239 @@
     }).join('');
   }
 
+  // ── Agente IA · Mediciones bot · Handoff ─────────────
+  // Datos del bot de Soporte (PRODIGY_V3) y del de Mediciones. Pasan por la Edge Function
+  // (acción "agente", misma clave) hacia la rama "Panel ·" de PRODIGY_V3 en n8n.
+  const ERR_AGENTE = {
+    solo_whatsapp: 'Solo se puede atender por WhatsApp: esta conversación es de Telegram.',
+    no_tomado: 'Primero tomá el chat: mientras no esté tomado, contesta el bot.',
+    fuera_de_ventana: 'Pasaron más de 24 h desde el último mensaje de la persona: WhatsApp no deja escribirle hasta que vuelva a escribir.',
+    texto_vacio: 'Escribí un mensaje.', whatsapp: 'WhatsApp rechazó el envío. Probá de nuevo en un rato.',
+    no_configurado: 'El panel del agente todavía no está configurado en el servidor.', usuario: 'Número inválido.',
+    n8n: 'No se pudo conectar con el bot. Probá de nuevo.', base: 'Error leyendo la base del bot.',
+  };
+  const QUIEN_KEY = 'lector-autocode:quien';
+  let tab = 'lector', agDatos = null, agConvs = [], hfLista = [], chatUid = null, chatDatos = null;
+  let pollChat = null, pollLista = null, enviando = false;
+  const cargadas = {};  // pestaña → días con que se cargó (si cambia el período, se recarga)
+
+  async function agente(op, extra = {}) {
+    const r = await fetch(API_USO, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ accion: 'agente', clave: leerClave(), op, dias, ...extra }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { guardarClave(''); pararPolls(); mostrarLogin('Clave incorrecta.'); throw Object.assign(new Error('clave'), { silencio: true }); }
+    if (r.status === 429) { guardarClave(''); pararPolls(); mostrarLogin('Demasiados intentos con clave incorrecta. Esperá 15 minutos y probá de nuevo.'); throw Object.assign(new Error('bloqueado'), { silencio: true }); }
+    if (!r.ok && !j.error) throw new Error('n8n');
+    if (j.ok === false) throw new Error(j.error || 'n8n');
+    return j;
+  }
+  const msgError = e => ERR_AGENTE[e.message] || 'No se pudo cargar. Probá de nuevo.';
+  function avisar(id, e) { const el = $(id); if (e?.silencio) return; el.textContent = e ? msgError(e) : ''; el.hidden = !e; }
+  const hace = t => {
+    if (!t) return '—';
+    const m = Math.round((Date.now() - new Date(t)) / 60000);
+    return m < 1 ? 'recién' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.floor(m / 60)} h` : `hace ${Math.floor(m / 1440)} d`;
+  };
+  const kpis = (id, tiles) => { $(id).innerHTML = tiles.map(([l, v, s, c]) =>
+    `<div class="kpi" style="--accent:var(${c})"><div class="kpi-lbl">${l}</div><div class="kpi-val">${v}</div><div class="kpi-sub">${s}</div></div>`).join(''); };
+  const BADGE_HF = { pendiente: ['Pendiente', 'xw'], tomado: ['Tomado', 'xb'], cerrado: ['Cerrado', 'xm'] };
+  const badgeHf = e => e && BADGE_HF[e] ? `<span class="bx ${BADGE_HF[e][1]}">${BADGE_HF[e][0]}</span>` : '';
+  const nombreConv = c => c.alias || c.nombre || c.user_id;
+
+  function verTab(t) {
+    tab = t;
+    document.querySelectorAll('#admTabs .adm-tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+    $('tabLector').hidden = t !== 'lector'; $('tabAgente').hidden = t !== 'agente';
+    $('tabMedbot').hidden = t !== 'medbot'; $('tabHandoff').hidden = t !== 'handoff';
+    $('admDias').style.visibility = t === 'handoff' ? 'hidden' : '';
+    pararPolls();
+    if (t === 'handoff') pollLista = setInterval(() => cargarHandoffs(true), 60000);
+    if (t === 'handoff' && chatUid) pollChat = setInterval(() => cargarChat(true), 30000);
+    if (cargadas[t] !== dias || t === 'handoff') actualizar();
+  }
+  // Al entrar: cuántas derivaciones pendientes hay (badge de la pestaña), solo si la clave ya anduvo.
+  function badgeHandoff() { if (!$('admPanel').hidden) cargarHandoffs(true); }
+  function pararPolls() { clearInterval(pollChat); clearInterval(pollLista); pollChat = pollLista = null; }
+
+  function actualizar() {
+    if (tab === 'lector') return cargar();
+    if (tab === 'agente' || tab === 'medbot') return cargarAgente();
+    return Promise.all([cargarHandoffs(), chatUid ? cargarChat() : null]);
+  }
+
+  async function cargarAgente() {
+    $('admEstado').textContent = 'Cargando…';
+    try {
+      const [m, c] = await Promise.all([agente('metricas'), agente('conversaciones', { q: $('agBuscar').value.trim() })]);
+      agDatos = m; agConvs = c.conversaciones || [];
+      cargadas.agente = cargadas.medbot = dias;
+      pintarAgente(); pintarConvs(); pintarMedbot();
+      avisar('agError'); avisar('mbError');
+      $('admEstado').textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      avisar(tab === 'medbot' ? 'mbError' : 'agError', e); $('admEstado').textContent = '';
+    }
+  }
+
+  function pintarAgente() {
+    const s = agDatos.soporte || {};
+    kpis('agKpis', [
+      ['Usuarios únicos', num(s.usuarios), `${num(s.usuarios_whatsapp)} por WhatsApp`, '--blue'],
+      ['Consultas', num(s.del_usuario), 'mensajes de usuarios', '--violet'],
+      ['Respuestas del bot', num(s.del_agente), `${s.del_usuario ? Math.round(100 * s.del_agente / s.del_usuario) : 0}% de las consultas`, '--teal'],
+      ['Respuestas humanas', num(s.humanos), 'desde el handoff', '--ok'],
+      ['Derivaciones', num(s.handoffs), 'pedidos de hablar con una persona', s.handoffs ? '--wa' : '--mt'],
+    ]);
+    const filas = porSemana(s.por_dia || [], ['mensajes', 'usuarios']);
+    const sem = filas[0]?.semana;
+    barras($('agPorDia'), filas, 'mensajes', 'Consultas por día',
+      f => `<b>${sem ? 'Semana del ' : ''}${fechaCorta(f.dia)}</b><br>${num(f.mensajes)} consultas · ${num(f.usuarios)} usuarios`);
+    $('agPorDiaTotal').textContent = `${num(s.del_usuario)} consultas${sem ? ' · por semana' : ''}`;
+  }
+
+  function pintarConvs() {
+    $('agConvs').innerHTML = agConvs.length
+      ? agConvs.map(c => `<tr class="clic" data-uid="${esc(c.user_id)}"><td>${esc(nombreConv(c))}<div class="kpi-sub mono">${esc(c.user_id)}</div></td>
+          <td><span class="bx ${c.canal === 'whatsapp' ? 'xg' : 'xb'}">${c.canal === 'whatsapp' ? 'WhatsApp' : 'Telegram'}</span></td>
+          <td class="num">${num(c.mensajes)}</td><td class="num">${num(c.del_usuario)}</td>
+          <td class="mono">${fechaHora(c.ultimo)}</td><td>${badgeHf(c.handoff)}</td></tr>`).join('')
+      : '<tr><td colspan="6" class="vacio">Sin conversaciones en el período.</td></tr>';
+    $('agConvs').querySelectorAll('tr.clic').forEach(tr => tr.onclick = () => abrirChat(tr.dataset.uid));
+  }
+
+  function pintarMedbot() {
+    const m = agDatos.mediciones || {};
+    kpis('mbKpis', [
+      ['Pacientes registrados', num(m.pacientes), 'dados de alta en el bot (total)', '--blue'],
+      ['Pacientes que midieron', num(m.usuarios), 'en el período', '--violet'],
+      ['Mediciones', num(m.mediciones), 'registradas en el período', '--teal'],
+      ['Promedio', m.promedio != null ? `${num(m.promedio)}` : '—', 'mg/dL', '--ok'],
+    ]);
+    const filas = porSemana(m.por_dia || [], ['mediciones']);
+    const sem = filas[0]?.semana;
+    barras($('mbPorDia'), filas, 'mediciones', 'Mediciones por día',
+      f => `<b>${sem ? 'Semana del ' : ''}${fechaCorta(f.dia)}</b><br>${num(f.mediciones)} mediciones`);
+    $('mbPorDiaTotal').textContent = `${num(m.mediciones)} mediciones${sem ? ' · por semana' : ''}`;
+    const nom = { whatsapp: 'WhatsApp', telegram: 'Telegram', texto: 'Texto', foto: 'Foto del medidor', audio: 'Audio' };
+    barrasH($('mbCanal'), (m.por_canal || []).map(x => ({ etiqueta: nom[x.canal] || x.canal, n: x.n })), 'Sin mediciones en el período.');
+    barrasH($('mbOrigen'), (m.por_origen || []).map(x => ({ etiqueta: nom[x.origen] || x.origen, n: x.n })), 'Sin mediciones en el período.');
+  }
+
+  // ── Handoff ──
+  async function cargarHandoffs(silencioso) {
+    try {
+      const j = await agente('handoffs');
+      hfLista = j.handoffs || [];
+      cargadas.handoff = dias;
+      pintarHandoffs(); if (!silencioso) avisar('hfError');
+    } catch (e) { if (!silencioso) avisar('hfError', e); }
+  }
+
+  function pintarHandoffs() {
+    const pend = hfLista.filter(h => h.estado === 'pendiente').length;
+    $('admHfBadge').textContent = pend; $('admHfBadge').hidden = !pend;
+    $('hfLista').innerHTML = hfLista.length ? hfLista.map(h => `<div class="hf-item${h.user_id === chatUid ? ' sel' : ''}" data-uid="${esc(h.user_id)}">
+        <div class="t"><span>${esc(h.nombre || h.alias || h.user_id)}</span>${badgeHf(h.estado)}</div>
+        <div class="s">${h.estado === 'tomado' ? `Tomado por ${esc(h.atendido_por || '—')} · ${hace(h.tomado)}` : h.estado === 'cerrado' ? `Cerrado ${hace(h.cerrado)}` : `Pidió una persona ${hace(h.creado)}`}</div>
+        <div class="s">${h.canal === 'telegram' ? 'Telegram · ' : ''}Último mensaje ${hace(h.ultimo_usuario)}: ${esc(h.ultimo_texto || '—')}</div></div>`).join('')
+      : '<div class="vacio">No hay derivaciones. Cuando alguien pida hablar con una persona, aparece acá.</div>';
+    $('hfLista').querySelectorAll('.hf-item').forEach(el => el.onclick = () => abrirChat(el.dataset.uid));
+  }
+
+  function abrirChat(uid) {
+    chatUid = uid; chatDatos = null;
+    $('hfVacio').hidden = true; $('hfChat').hidden = false; $('hfMensajes').innerHTML = '<div class="vacio">Cargando…</div>';
+    $('hfAviso').hidden = true; $('hfTexto').value = '';
+    verTab('handoff');
+    pintarHandoffs();
+  }
+
+  async function cargarChat(silencioso) {
+    const uid = chatUid;
+    if (!uid) return;
+    try {
+      const j = await agente('chat', { user_id: uid });
+      if (uid !== chatUid) return;
+      const abajo = (() => { const c = $('hfMensajes'); return c.scrollHeight - c.scrollTop - c.clientHeight < 60; })();
+      chatDatos = j; pintarChat(abajo || !silencioso);
+    } catch (e) { if (!silencioso) { $('hfAviso').textContent = msgError(e); $('hfAviso').hidden = e.silencio; } }
+  }
+
+  function pintarChat(bajar) {
+    const c = chatDatos, h = c.handoff, wa = c.canal === 'whatsapp';
+    const ventana = c.ultimo_usuario && Date.now() - new Date(c.ultimo_usuario) < 24 * 3600e3;
+    const tomado = h?.estado === 'tomado';
+    $('hfNombre').textContent = h?.nombre || c.alias || c.user_id;
+    $('hfNumero').textContent = (wa ? '+' : 'Telegram · ') + c.user_id;
+    $('hfEstado').innerHTML = (tomado ? `${badgeHf('tomado')} por ${esc(h.atendido_por || '—')} desde ${fechaHora(h.tomado)} · el bot no le contesta`
+      : h?.estado === 'pendiente' ? `${badgeHf('pendiente')} pidió una persona ${hace(h.creado)} · el bot sigue contestando`
+      : 'Atiende el bot') + ` · último mensaje ${hace(c.ultimo_usuario)}`;
+    $('hfDatos').textContent = h && (h.dni || h.email) ? `DNI ${h.dni || '—'} · ${h.email || '—'}` : '';
+    $('hfTomar').hidden = !wa || tomado; $('hfDevolver').hidden = !h;
+    $('hfDevolver').textContent = tomado ? 'Devolver al bot' : 'Cerrar derivación';
+    $('hfPie').hidden = !wa || !tomado;
+    const aviso = !wa ? 'Esta conversación es de Telegram: el panel solo puede responder por WhatsApp.'
+      : tomado && !ventana ? ERR_AGENTE.fuera_de_ventana : '';
+    $('hfAviso').textContent = aviso; $('hfAviso').hidden = !aviso;
+    $('hfEnviar').disabled = !ventana || enviando; $('hfTexto').disabled = !ventana;
+    const caja = $('hfMensajes');
+    caja.innerHTML = (c.mensajes || []).length ? c.mensajes.map(m => {
+      const humano = m.autor && m.autor.startsWith('humano:');
+      const cls = m.role === 'user' ? 'u' : humano ? 'h' : 'a';
+      const quien = m.role === 'user' ? '' : humano ? m.autor.slice(7) + ' · ' : 'Bot · ';
+      return `<div class="msg ${cls}">${esc(m.content)}<small>${esc(quien)}${fechaHora(m.creado)}</small></div>`;
+    }).join('') : '<div class="vacio">Sin mensajes.</div>';
+    if (bajar) caja.scrollTop = caja.scrollHeight;
+  }
+
+  async function accionChat(op, extra = {}) {
+    const uid = chatUid;
+    try {
+      await agente(op, { user_id: uid, quien: quien(), ...extra });
+      await Promise.all([cargarChat(), cargarHandoffs(true)]);
+      return true;
+    } catch (e) { if (!e.silencio) { $('hfAviso').textContent = msgError(e); $('hfAviso').hidden = false; } return false; }
+  }
+  const quien = () => $('hfQuien').value.trim();
+  function pedirQuien() {
+    if (quien()) return true;
+    $('hfAviso').textContent = 'Poné tu nombre en "Atendido por" antes de tomar o responder.'; $('hfAviso').hidden = false;
+    $('hfQuien').focus(); return false;
+  }
+
+  $('hfTomar').onclick = async () => { if (!pedirQuien()) return; $('hfTomar').disabled = true; await accionChat('tomar'); $('hfTomar').disabled = false; };
+  $('hfDevolver').onclick = async () => {
+    const tomado = chatDatos?.handoff?.estado === 'tomado';
+    if (!confirm(tomado ? '¿Devolver esta conversación al bot? Vuelve a contestar automáticamente.' : '¿Cerrar esta derivación?')) return;
+    $('hfDevolver').disabled = true; await accionChat('devolver'); $('hfDevolver').disabled = false;
+  };
+  $('hfEnviar').onclick = async () => {
+    const t = $('hfTexto').value.trim();
+    if (!t || enviando || !pedirQuien()) return;
+    enviando = true; $('hfEnviar').disabled = true; $('hfEnviar').textContent = 'Enviando…';
+    if (await accionChat('responder', { texto: t })) $('hfTexto').value = '';
+    enviando = false; $('hfEnviar').textContent = 'Enviar'; if (chatDatos) pintarChat(true);
+  };
+  $('hfTexto').onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) $('hfEnviar').click(); };
+  try { $('hfQuien').value = localStorage.getItem(QUIEN_KEY) || ''; } catch {}
+  $('hfQuien').onchange = () => { try { localStorage.setItem(QUIEN_KEY, quien()); } catch {} };
+  let buscarT;
+  $('agBuscar').oninput = () => { clearTimeout(buscarT); buscarT = setTimeout(async () => {
+    try { agConvs = (await agente('conversaciones', { q: $('agBuscar').value.trim() })).conversaciones || []; pintarConvs(); } catch (e) { avisar('agError', e); }
+  }, 350); };
+  document.querySelectorAll('#admTabs .adm-tab').forEach(b => b.onclick = () => verTab(b.dataset.tab));
+
   // ── eventos ──────────────────────────────────────────
-  $('admEntrar').onclick = () => { const v = $('admClave').value.trim(); if (!v) return; guardarClave(v); $('admClave').value = ''; cargar(); };
+  $('admEntrar').onclick = () => { const v = $('admClave').value.trim(); if (!v) return; guardarClave(v); $('admClave').value = ''; cargar().then(() => { if ($('admPanel').hidden) return; if (tab !== 'lector') verTab(tab); else badgeHandoff(); }); };
   $('admClave').onkeydown = e => { if (e.key === 'Enter') $('admEntrar').click(); };
-  $('admActualizar').onclick = cargar;
-  $('admSalir').onclick = () => { guardarClave(''); location.hash = ''; };
+  $('admActualizar').onclick = actualizar;
+  $('admSalir').onclick = () => { pararPolls(); guardarClave(''); location.hash = ''; };
   document.querySelectorAll('#admDias .chip').forEach(b => b.onclick = () => {
     dias = +b.dataset.dias;
     document.querySelectorAll('#admDias .chip').forEach(x => x.classList.toggle('chip-on', x === b));
-    cargar();
+    actualizar();
   });
   window.addEventListener('hashchange', rutear);
   if (esAdmin()) rutear();
