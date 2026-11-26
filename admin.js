@@ -408,6 +408,22 @@
     } catch (e) { if (!e.silencio) { $('hfAviso').textContent = msgError(e); $('hfAviso').hidden = false; } return false; }
   }
   const quien = () => $('hfQuien').value.trim();
+  // Diálogo de confirmación con la estética del panel. Esc o clic afuera = cancelar.
+  function confirmar([titulo, texto, si]) {
+    const dlg = $('admDlg');
+    $('admDlgTitulo').textContent = titulo; $('admDlgTexto').textContent = texto; $('admDlgSi').textContent = si;
+    return new Promise(res => {
+      const fin = v => { dlg.close(); res(v); };
+      $('admDlgSi').onclick = () => fin(true);
+      $('admDlgNo').onclick = () => fin(false);
+      dlg.oncancel = e => { e.preventDefault(); fin(false); };
+      dlg.onclick = e => { // clic en el fondo (fuera de la caja), no en el padding del diálogo
+        const r = dlg.getBoundingClientRect();
+        if (e.target === dlg && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) fin(false);
+      };
+      dlg.showModal(); $('admDlgSi').focus();
+    });
+  }
   function pedirQuien() {
     if (quien()) return true;
     $('hfAviso').textContent = 'Poné tu nombre en "Atendido por" antes de tomar o responder.'; $('hfAviso').hidden = false;
@@ -417,7 +433,10 @@
   $('hfTomar').onclick = async () => { if (!pedirQuien()) return; $('hfTomar').disabled = true; await accionChat('tomar'); $('hfTomar').disabled = false; };
   $('hfDevolver').onclick = async () => {
     const tomado = chatDatos?.handoff?.estado === 'tomado';
-    if (!confirm(tomado ? '¿Devolver esta conversación al bot? Vuelve a contestar automáticamente.' : '¿Cerrar esta derivación?')) return;
+    const ok = await confirmar(tomado
+      ? ['¿Devolver al bot?', 'El bot vuelve a contestarle automáticamente a esta persona.', 'Devolver al bot']
+      : ['¿Cerrar la derivación?', 'Se marca como resuelta y sale de la lista de pendientes.', 'Cerrar derivación']);
+    if (!ok) return;
     $('hfDevolver').disabled = true; await accionChat('devolver'); $('hfDevolver').disabled = false;
   };
   $('hfEnviar').onclick = async () => {
