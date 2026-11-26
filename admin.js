@@ -348,7 +348,10 @@
   async function cargarHandoffs(silencioso) {
     try {
       const j = await agente('handoffs');
-      hfLista = j.handoffs || [];
+      // Una sola fila por persona: la derivación más reciente (si hay una abierta, es esa).
+      const ultima = {};
+      (j.handoffs || []).forEach(h => { if (!ultima[h.user_id] || new Date(h.creado) > new Date(ultima[h.user_id].creado)) ultima[h.user_id] = h; });
+      hfLista = (j.handoffs || []).filter(h => ultima[h.user_id] === h);
       cargadas.handoff = dias;
       pintarHandoffs(); if (!silencioso) avisar('hfError');
     } catch (e) { if (!silencioso) avisar('hfError', e); }
