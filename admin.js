@@ -1,14 +1,15 @@
 // Dashboard de uso (#modoadmin).
 //
-// Se abre con appmediciones.giwa-ia.com/#modoadmin. El hash solo muestra la vista: los
-// datos los da la Edge Function prodigy-med (acción "dashboard") únicamente con la clave
-// de administrador, que se valida en el servidor. Este archivo es público y no guarda
-// nada secreto. La clave se recuerda solo en esta pestaña (sessionStorage).
+// Se abre con appmediciones.giwa-ia.com/#modoadmin. El hash solo muestra la vista: se entra con
+// Google o Microsoft (Supabase Auth de Giwa_Database, PKCE) y la Edge Function prodigy-med valida
+// el token de la sesión y que el email esté habilitado en prodigy_med.usuarios_panel. Este
+// archivo es público: la publishable key de Supabase es pública por diseño.
 //
 // Todo lo que viene de la base se escapa: los eventos los puede mandar cualquiera.
 
 (() => {
-  const CLAVE_KEY = 'lector-autocode:admin';
+  const SUPABASE_URL = 'https://ofhiogczijhzkuqdjwvz.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_sHdrgf8l6HwnKgK38gWnFQ_fEEVgG4f';
   const EVENTOS = { pagina_abierta: 'Abrió la página', conectado: 'Conectó el medidor', lectura: 'Leyó las mediciones',
     reporte_pdf: 'Generó el reporte', gracias: 'Llegó al final', opinion: 'Dejó su opinión', error: 'Error' };
   const ERRORES = { sin_puerto: 'No eligió el medidor', puerto_ocupado: 'Puerto ocupado', no_responde_serie: 'El medidor no responde',
@@ -20,12 +21,51 @@
   const num = n => Number(n || 0).toLocaleString('es-AR');
   const fechaHora = t => t ? new Date(t).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
   const fechaCorta = f => { if (!f) return '—'; const [a, m, d] = String(f).slice(0, 10).split('-'); return `${d}/${m}/${a.slice(2)}`; };
-  const leerClave = () => { try { return sessionStorage.getItem(CLAVE_KEY) || ''; } catch { return ''; } };
-  const guardarClave = v => { try { v ? sessionStorage.setItem(CLAVE_KEY, v) : sessionStorage.removeItem(CLAVE_KEY); } catch {} };
 
-  function esAdmin() { return location.hash === '#modoadmin'; }
+  // supabase-js se carga solo al entrar al panel: la vista del paciente no lo necesita.
+  let sbP = null;
+  function sbCliente() {
+    sbP = sbP || new Promise((ok, mal) => {
+      if (window.supabase) return ok();
+      const sc = document.createElement('script');
+      sc.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
+      sc.onload = ok; sc.onerror = () => { sbP = null; mal(new Error('sin_sdk')); };
+      document.head.appendChild(sc);
+    }).then(() => window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce' } }));
+    return sbP;
+  }
+  // access_token vigente (supabase-js lo renueva solo); '' si no hay sesión.
+  async function token() {
+    try { const { data } = await (await sbCliente()).auth.getSession(); return data.session?.access_token || ''; } catch { return ''; }
+  }
+  async function salir(msg = '') {
+    pararPolls();
+    try { await (await sbCliente()).auth.signOut(); } catch {}
+    $('admUsuario').textContent = '';
+    mostrarLogin(msg);
+  }
+  // 401 = sesión vencida o inválida; 403 = la cuenta no está habilitada en este panel.
+  async function sinSesion(status, email) {
+    if (status === 401) await salir('Tu sesión venció. Entrá de nuevo.');
+    else await salir(`La cuenta ${email || ''} no tiene acceso a este panel. Pedile a GIWA que la habilite.`);
+  }
 
-  function rutear() {
+  // Google / Microsoft ('azure' en Supabase). Vuelve a /?modoadmin&code=… y supabase-js canjea el código.
+  async function entrarCon(proveedor) {
+    $('admError').hidden = true;
+    try {
+      const sb = await sbCliente();
+      const { error } = await sb.auth.signInWithOAuth({
+        provider: proveedor,
+        options: { redirectTo: location.origin + location.pathname + '?modoadmin', scopes: proveedor === 'azure' ? 'email' : undefined },
+      });
+      if (error) throw error;
+    } catch (e) { mostrarLogin('No se pudo iniciar el ingreso: ' + (e.message || e)); }
+  }
+
+  function esAdmin() { return location.hash === '#modoadmin' || new URLSearchParams(location.search).has('modoadmin'); }
+
+  async function rutear() {
     const admin = esAdmin();
     $('vistaAdmin').hidden = !admin;
     document.body.classList.toggle('modo-admin', admin);
@@ -33,7 +73,16 @@
       $('vistaSimple').hidden = true; $('vistaTecnica').hidden = true;
       document.body.classList.remove('vista-simple');
       $('estado').hidden = true;
-      if (leerClave()) cargar().then(badgeHandoff); else mostrarLogin();
+      // Vuelta del login: si Supabase rechazó la cuenta, viene ?error_description=…
+      const q = new URLSearchParams(location.search);
+      const errLogin = q.get('error_description');
+      const sb = await sbCliente().catch(() => null);
+      if (!sb) return mostrarLogin('No se pudo cargar el inicio de sesión. Revisá la conexión y recargá.');
+      await sb.auth.getSession();  // espera el canje del ?code= (PKCE) antes de limpiar la URL
+      if (q.has('modoadmin') || errLogin) history.replaceState(null, '', location.pathname + '#modoadmin');
+      if (errLogin) return mostrarLogin(/signups? not allowed|not allowed for this instance/i.test(errLogin)
+        ? 'Esa cuenta no está habilitada en el panel. Pedile a GIWA que la agregue con ese mismo email.' : errLogin.replace(/\+/g, ' '));
+      if (await token()) cargar().then(badgeHandoff); else mostrarLogin();
     } else {
       pararPolls();
       $('estado').hidden = false;
@@ -44,7 +93,7 @@
   function mostrarLogin(msg = '') {
     $('admLogin').hidden = false; $('admPanel').hidden = true;
     $('admError').textContent = msg; $('admError').hidden = !msg;
-    setTimeout(() => $('admClave').focus(), 0);
+    setTimeout(() => $('admGoogle').focus(), 0);
   }
 
   async function cargar() {
@@ -54,13 +103,13 @@
     try {
       const r = await fetch(API_USO, {
         method: 'POST', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ accion: 'dashboard', clave: leerClave(), dias }),
+        body: JSON.stringify({ accion: 'dashboard', token: await token(), dias }),
       });
       const j = await r.json().catch(() => ({}));
-      if (r.status === 401) { guardarClave(''); mostrarLogin('Clave incorrecta.'); return; }
-      if (r.status === 429) { guardarClave(''); mostrarLogin('Demasiados intentos con clave incorrecta. Esperá 15 minutos y probá de nuevo.'); return; }
+      if (r.status === 401 || r.status === 403) { await sinSesion(r.status, await emailSesion()); return; }
       if (!r.ok || !j.ok) throw new Error(j.error || r.status);
       $('admLogin').hidden = true; $('admPanel').hidden = false;
+      if (j.usuario) { $('admUsuario').textContent = j.usuario.nombre; $('hfQuien').textContent = j.usuario.nombre; }
       pintar(j.datos);
       cargadas.lector = dias;
       $('admEstado').textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
@@ -223,7 +272,9 @@
     no_configurado: 'El panel del agente todavía no está configurado en el servidor.', usuario: 'Número inválido.',
     n8n: 'No se pudo conectar con el bot. Probá de nuevo.', base: 'Error leyendo la base del bot.',
   };
-  const QUIEN_KEY = 'lector-autocode:quien';
+  async function emailSesion() {
+    try { const { data } = await (await sbCliente()).auth.getSession(); return data.session?.user?.email || ''; } catch { return ''; }
+  }
   let tab = 'lector', agDatos = null, agConvs = [], hfLista = [], chatUid = null, chatDatos = null;
   let pollChat = null, pollLista = null, enviando = false;
   const cargadas = {};  // pestaña → días con que se cargó (si cambia el período, se recarga)
@@ -231,11 +282,10 @@
   async function agente(op, extra = {}) {
     const r = await fetch(API_USO, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ accion: 'agente', clave: leerClave(), op, dias, ...extra }),
+      body: JSON.stringify({ accion: 'agente', token: await token(), op, dias, ...extra }),
     });
     const j = await r.json().catch(() => ({}));
-    if (r.status === 401) { guardarClave(''); pararPolls(); mostrarLogin('Clave incorrecta.'); throw Object.assign(new Error('clave'), { silencio: true }); }
-    if (r.status === 429) { guardarClave(''); pararPolls(); mostrarLogin('Demasiados intentos con clave incorrecta. Esperá 15 minutos y probá de nuevo.'); throw Object.assign(new Error('bloqueado'), { silencio: true }); }
+    if (r.status === 401 || r.status === 403) { await sinSesion(r.status, await emailSesion()); throw Object.assign(new Error('sesion'), { silencio: true }); }
     if (!r.ok && !j.error) throw new Error('n8n');
     if (j.ok === false) throw new Error(j.error || 'n8n');
     return j;
@@ -500,12 +550,11 @@
   async function accionChat(op, extra = {}) {
     const uid = chatUid;
     try {
-      await agente(op, { user_id: uid, quien: quien(), ...extra });
+      await agente(op, { user_id: uid, ...extra });  // quién atiende lo pone el servidor, desde la sesión
       await Promise.all([cargarChat(), cargarHandoffs(true)]);
       return true;
     } catch (e) { if (!e.silencio) { $('hfAviso').textContent = msgError(e); $('hfAviso').hidden = false; } return false; }
   }
-  const quien = () => $('hfQuien').value.trim();
   // Diálogo de confirmación con la estética del panel. Esc o clic afuera = cancelar.
   function confirmar([titulo, texto, si]) {
     const dlg = $('admDlg');
@@ -522,13 +571,7 @@
       dlg.showModal(); $('admDlgSi').focus();
     });
   }
-  function pedirQuien() {
-    if (quien()) return true;
-    $('hfAviso').textContent = 'Poné tu nombre en "Atendido por" antes de tomar o responder.'; $('hfAviso').hidden = false;
-    $('hfQuien').focus(); return false;
-  }
-
-  $('hfTomar').onclick = async () => { if (!pedirQuien()) return; $('hfTomar').disabled = true; await accionChat('tomar'); $('hfTomar').disabled = false; };
+  $('hfTomar').onclick = async () => { $('hfTomar').disabled = true; await accionChat('tomar'); $('hfTomar').disabled = false; };
   $('hfDevolver').onclick = async () => {
     const tomado = chatDatos?.handoff?.estado === 'tomado';
     const ok = await confirmar(tomado
@@ -539,14 +582,12 @@
   };
   $('hfEnviar').onclick = async () => {
     const t = $('hfTexto').value.trim();
-    if (!t || enviando || !pedirQuien()) return;
+    if (!t || enviando) return;
     enviando = true; $('hfEnviar').disabled = true; $('hfEnviar').textContent = 'Enviando…';
     if (await accionChat('responder', { texto: t })) $('hfTexto').value = '';
     enviando = false; $('hfEnviar').textContent = 'Enviar'; if (chatDatos) pintarChat(true);
   };
   $('hfTexto').onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) $('hfEnviar').click(); };
-  try { $('hfQuien').value = localStorage.getItem(QUIEN_KEY) || ''; } catch {}
-  $('hfQuien').onchange = () => { try { localStorage.setItem(QUIEN_KEY, quien()); } catch {} };
   let buscarT;
   $('agBuscar').oninput = () => { clearTimeout(buscarT); buscarT = setTimeout(async () => {
     try { agConvs = (await agente('conversaciones', { q: $('agBuscar').value.trim() })).conversaciones || []; pintarConvs(); } catch (e) { avisar('agError', e); }
@@ -554,10 +595,10 @@
   document.querySelectorAll('#admTabs .adm-tab').forEach(b => b.onclick = () => verTab(b.dataset.tab));
 
   // ── eventos ──────────────────────────────────────────
-  $('admEntrar').onclick = () => { const v = $('admClave').value.trim(); if (!v) return; guardarClave(v); $('admClave').value = ''; cargar().then(() => { if ($('admPanel').hidden) return; if (tab !== 'lector') verTab(tab); else badgeHandoff(); }); };
-  $('admClave').onkeydown = e => { if (e.key === 'Enter') $('admEntrar').click(); };
+  $('admGoogle').onclick = () => entrarCon('google');
+  $('admMicrosoft').onclick = () => entrarCon('azure');
   $('admActualizar').onclick = actualizar;
-  $('admSalir').onclick = () => { pararPolls(); guardarClave(''); location.hash = ''; };
+  $('admSalir').onclick = async () => { await salir(); location.hash = ''; };
   document.querySelectorAll('#admDias .chip').forEach(b => b.onclick = () => {
     dias = +b.dataset.dias;
     document.querySelectorAll('#admDias .chip').forEach(x => x.classList.toggle('chip-on', x === b));
