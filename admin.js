@@ -249,6 +249,18 @@
   };
   const kpis = (id, tiles) => { $(id).innerHTML = tiles.map(([l, v, s, c]) =>
     `<div class="kpi" style="--accent:var(${c})"><div class="kpi-lbl">${l}</div><div class="kpi-val">${v}</div><div class="kpi-sub">${s}</div></div>`).join(''); };
+  const iniciales = n => String(n || '?').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+  // Duración legible: "8 min", "3 h 05 min", "2 d 4 h".
+  const dur = ms => {
+    if (ms == null || isNaN(ms) || ms < 0) return '—';
+    const m = Math.floor(ms / 60000);
+    if (m < 60) return `${m} min`;
+    if (m < 1440) return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`;
+    return `${Math.floor(m / 1440)} d ${Math.floor((m % 1440) / 60)} h`;
+  };
+  const desde = t => t ? dur(Date.now() - new Date(t)) : '—';
+  // Versión corta para los indicadores: "5m", "1h 05m", "23h 54m", "2d 2h".
+  const corta = ms => dur(ms).replace(/ (h|d|min)\b/g, (_, u) => u === 'min' ? 'm' : u).replace(/ 0?(\d+) min$/, ' $1m');
   const BADGE_HF = { pendiente: ['Pendiente', 'xw'], tomado: ['Tomado', 'xb'], cerrado: ['Cerrado', 'xm'] };
   const badgeHf = e => e && BADGE_HF[e] ? `<span class="bx ${BADGE_HF[e][1]}">${BADGE_HF[e][0]}</span>` : '';
   const nombreConv = c => c.alias || c.nombre || c.user_id;
@@ -347,10 +359,15 @@
     $('admHfBadge').textContent = pend; $('admHfBadge').hidden = !pend;
     if (hfBusqueda) return pintarBusqueda();  // con el buscador activo, la lista muestra los resultados
     $('hfListaTit').textContent = 'Derivaciones';
-    $('hfLista').innerHTML = hfLista.length ? hfLista.map(h => `<div class="hf-item${h.user_id === chatUid ? ' sel' : ''}" data-uid="${esc(h.user_id)}">
-        <div class="t"><span>${esc(h.nombre || h.alias || h.user_id)}</span>${badgeHf(h.estado)}</div>
-        <div class="s">${h.estado === 'tomado' ? `Tomado por ${esc(h.atendido_por || '—')} · ${hace(h.tomado)}` : h.estado === 'cerrado' ? `Cerrado ${hace(h.cerrado)}` : `Pidió una persona ${hace(h.creado)}`}</div>
-        <div class="s">${h.canal === 'telegram' ? 'Telegram · ' : ''}Último mensaje ${hace(h.ultimo_usuario)}: ${esc(h.ultimo_texto || '—')}</div></div>`).join('')
+    $('hfLista').innerHTML = hfLista.length ? hfLista.map(h => {
+      const nombre = h.nombre || h.alias || h.user_id, abierto = h.estado !== 'cerrado';
+      return `<div class="hf-item${h.user_id === chatUid ? ' sel' : ''}" data-uid="${esc(h.user_id)}">
+        <div class="hf-av ${h.estado === 'pendiente' ? 'xw' : abierto ? '' : 'xm'}">${esc(iniciales(nombre))}</div>
+        <div class="cuerpo">
+        <div class="t"><span>${esc(nombre)}</span><span class="hora" title="Derivado ${fechaHora(h.creado)}">${abierto ? desde(h.creado) : ''}</span></div>
+        <div class="s">${badgeHf(h.estado)} ${h.estado === 'tomado' ? `${esc(h.atendido_por || '—')} · hace ${desde(h.tomado)}` : h.estado === 'cerrado' ? `Cerrado ${hace(h.cerrado)} · duró ${dur(new Date(h.cerrado) - new Date(h.creado))}` : `Esperando hace ${desde(h.creado)}`}</div>
+        <div class="s">${h.canal === 'telegram' ? 'Telegram · ' : ''}${esc(h.ultimo_texto || '—')}</div></div></div>`;
+    }).join('')
       : '<div class="vacio">No hay derivaciones. Cuando alguien pida hablar con una persona, aparece acá.</div>';
     $('hfLista').querySelectorAll('.hf-item').forEach(el => el.onclick = () => abrirChat(el.dataset.uid));
   }
@@ -361,9 +378,11 @@
   function pintarBusqueda() {
     $('hfListaTit').textContent = `Resultados · ${hfResultados.length}`;
     $('hfLista').innerHTML = hfResultados.length ? hfResultados.map(c => `<div class="hf-item${c.user_id === chatUid ? ' sel' : ''}" data-uid="${esc(c.user_id)}">
+        <div class="hf-av">${esc(iniciales(nombreConv(c)))}</div>
+        <div class="cuerpo">
         <div class="t"><span>${esc(nombreConv(c))}</span>${badgeHf(c.handoff)}</div>
         <div class="s mono">${c.canal === 'whatsapp' ? '+' : 'Telegram · '}${esc(c.user_id)}</div>
-        <div class="s">${num(c.mensajes)} mensajes · último ${hace(c.ultimo)}</div></div>`).join('')
+        <div class="s">${num(c.mensajes)} mensajes · último ${hace(c.ultimo)}</div></div></div>`).join('')
       : '<div class="vacio">No hay usuarios que coincidan.</div>';
     $('hfLista').querySelectorAll('.hf-item').forEach(el => el.onclick = () => abrirChat(el.dataset.uid));
   }
@@ -385,6 +404,7 @@
   function abrirChat(uid) {
     chatUid = uid; chatDatos = null;
     $('hfVacio').hidden = true; $('hfChat').hidden = false; $('hfMensajes').innerHTML = '<div class="vacio">Cargando…</div>';
+    $('hfInfo').hidden = true;
     $('hfAviso').hidden = true; $('hfTexto').value = '';
     verTab('handoff');
     pintarHandoffs();
@@ -410,7 +430,6 @@
     $('hfEstado').innerHTML = (tomado ? `${badgeHf('tomado')} por ${esc(h.atendido_por || '—')} desde ${fechaHora(h.tomado)} · el bot no le contesta`
       : h?.estado === 'pendiente' ? `${badgeHf('pendiente')} pidió una persona ${hace(h.creado)} · el bot sigue contestando`
       : 'Atiende el bot') + ` · último mensaje ${hace(c.ultimo_usuario)}`;
-    $('hfDatos').textContent = h && (h.dni || h.email) ? `DNI ${h.dni || '—'} · ${h.email || '—'}` : '';
     $('hfTomar').hidden = !wa || tomado; $('hfDevolver').hidden = !h;
     $('hfDevolver').textContent = tomado ? 'Devolver al bot' : 'Cerrar derivación';
     $('hfPie').hidden = !wa || !tomado;
@@ -419,13 +438,60 @@
     $('hfAviso').textContent = aviso; $('hfAviso').hidden = !aviso;
     $('hfEnviar').disabled = !ventana || enviando; $('hfTexto').disabled = !ventana;
     const caja = $('hfMensajes');
-    caja.innerHTML = (c.mensajes || []).length ? c.mensajes.map(m => {
+    // Marcas de sistema intercaladas por hora: cuándo se derivó, se tomó y se cerró.
+    const hi = infoHandoff();
+    const marcas = hi ? [[hi.creado, 'pidió hablar con una persona'], [hi.tomado, `tomado por ${hi.atendido_por || '—'}`], [hi.cerrado, 'devuelto al bot']]
+      .filter(([t]) => t).map(([t, txt]) => ({ sys: true, creado: t, txt })) : [];
+    const items = [...(c.mensajes || []), ...marcas].sort((a, b) => new Date(a.creado) - new Date(b.creado));
+    caja.innerHTML = (c.mensajes || []).length ? items.map(m => {
+      if (m.sys) return `<div class="hf-sys">— ${esc(m.txt)} · ${fechaHora(m.creado)} —</div>`;
       const humano = m.autor && m.autor.startsWith('humano:');
       const cls = m.role === 'user' ? 'u' : humano ? 'h' : 'a';
       const quien = m.role === 'user' ? '' : humano ? m.autor.slice(7) + ' · ' : 'Bot · ';
       return `<div class="msg ${cls}">${esc(m.content)}<small>${esc(quien)}${fechaHora(m.creado)}</small></div>`;
     }).join('') : '<div class="vacio">Sin mensajes.</div>';
     if (bajar) caja.scrollTop = caja.scrollHeight;
+    pintarInfo();
+  }
+
+  // Derivación a mostrar: la abierta (viene en el chat) o, si no hay, la última cerrada de la lista.
+  function infoHandoff() {
+    const c = chatDatos;
+    if (!c) return null;
+    return c.handoff || hfLista.filter(h => h.user_id === c.user_id).sort((a, b) => new Date(b.creado) - new Date(a.creado))[0] || null;
+  }
+
+  // Panel derecho (como el del hospital): usuario, derivación y métricas.
+  function pintarInfo() {
+    const c = chatDatos, h = infoHandoff(), wa = c.canal === 'whatsapp';
+    const fila = (k, v) => `<div class="hf-irow"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+    const msgs = c.mensajes || [];
+    const ventanaMs = c.ultimo_usuario ? 24 * 3600e3 - (Date.now() - new Date(c.ultimo_usuario)) : -1;
+    const espera = !h ? '—' : h.tomado ? corta(new Date(h.tomado) - new Date(h.creado)) : h.estado === 'pendiente' ? corta(Date.now() - new Date(h.creado)) : '—';
+    const ESTADO_BOT = { WAIT_HUMAN: 'Pidiendo datos para derivar', WAIT_REPLACEMENT: 'Pidiendo datos de reemplazo', WAIT_CONTROL: 'Control de solución', WAIT_FEEDBACK: 'Esperando opinión' };
+    $('hfInfo').hidden = false;
+    $('hfInfo').innerHTML = `
+      <div class="hf-psec"><div class="sec">Usuario</div>
+        ${fila('Nombre', esc(h?.nombre || '—'))}
+        ${fila('Perfil', esc(c.alias || '—'))}
+        ${fila(wa ? 'WhatsApp' : 'Telegram', `<span class="mono">${wa ? '+' : ''}${esc(c.user_id)}</span>`)}
+        ${h?.dni ? fila('DNI', `<span class="mono">${esc(h.dni)}</span>`) : ''}
+        ${h?.email ? fila('Email', esc(h.email)) : ''}
+        ${fila('Primer mensaje', msgs.length ? fechaHora(msgs[0].creado) : '—')}
+      </div>
+      <div class="hf-psec"><div class="sec">Derivación</div>
+        ${h ? `${fila('Estado', badgeHf(h.estado))}
+        ${fila('Derivado', `${fechaHora(h.creado)}<div class="kpi-sub">hace ${desde(h.creado)}</div>`)}
+        ${h.tomado ? fila('Tomado', `${fechaHora(h.tomado)}<div class="kpi-sub">${esc(h.atendido_por || '—')}</div>`) : ''}
+        ${h.cerrado ? fila('Devuelto al bot', fechaHora(h.cerrado)) : ''}` : fila('Estado', 'Sin derivación · atiende el bot')}
+        ${c.estado_bot ? fila('Bot', esc(ESTADO_BOT[c.estado_bot] || c.estado_bot)) : ''}
+        <div class="hf-met">
+          <div><div class="l">${h?.tomado ? 'Respuesta' : 'Espera'}</div><div class="n">${espera}</div></div>
+          <div><div class="l">Mensajes</div><div class="n">${num(msgs.length)}</div></div>
+          <div><div class="l">Ventana 24h</div><div class="n" style="color:var(${!wa ? '--mt' : ventanaMs > 0 ? '--ok' : '--rd'})">${!wa ? '—' : ventanaMs > 0 ? corta(ventanaMs) : 'Cerrada'}</div></div>
+        </div>
+      </div>
+      ${h?.motivo ? `<div class="hf-psec"><div class="sec">Último mensaje al derivar</div><div class="hf-motivo">${esc(h.motivo)}</div></div>` : ''}`;
   }
 
   async function accionChat(op, extra = {}) {
