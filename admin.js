@@ -345,6 +345,8 @@
   function pintarHandoffs() {
     const pend = hfLista.filter(h => h.estado === 'pendiente').length;
     $('admHfBadge').textContent = pend; $('admHfBadge').hidden = !pend;
+    if (hfBusqueda) return pintarBusqueda();  // con el buscador activo, la lista muestra los resultados
+    $('hfListaTit').textContent = 'Derivaciones';
     $('hfLista').innerHTML = hfLista.length ? hfLista.map(h => `<div class="hf-item${h.user_id === chatUid ? ' sel' : ''}" data-uid="${esc(h.user_id)}">
         <div class="t"><span>${esc(h.nombre || h.alias || h.user_id)}</span>${badgeHf(h.estado)}</div>
         <div class="s">${h.estado === 'tomado' ? `Tomado por ${esc(h.atendido_por || '—')} · ${hace(h.tomado)}` : h.estado === 'cerrado' ? `Cerrado ${hace(h.cerrado)}` : `Pidió una persona ${hace(h.creado)}`}</div>
@@ -352,6 +354,33 @@
       : '<div class="vacio">No hay derivaciones. Cuando alguien pida hablar con una persona, aparece acá.</div>';
     $('hfLista').querySelectorAll('.hf-item').forEach(el => el.onclick = () => abrirChat(el.dataset.uid));
   }
+
+  // Buscador de usuarios de la pestaña Handoff: busca en todas las conversaciones del bot
+  // (nombre o número, sin límite de fecha) para abrir —y tomar— cualquier chat.
+  let hfBusqueda = '', hfResultados = [], hfBuscarT;
+  function pintarBusqueda() {
+    $('hfListaTit').textContent = `Resultados · ${hfResultados.length}`;
+    $('hfLista').innerHTML = hfResultados.length ? hfResultados.map(c => `<div class="hf-item${c.user_id === chatUid ? ' sel' : ''}" data-uid="${esc(c.user_id)}">
+        <div class="t"><span>${esc(nombreConv(c))}</span>${badgeHf(c.handoff)}</div>
+        <div class="s mono">${c.canal === 'whatsapp' ? '+' : 'Telegram · '}${esc(c.user_id)}</div>
+        <div class="s">${num(c.mensajes)} mensajes · último ${hace(c.ultimo)}</div></div>`).join('')
+      : '<div class="vacio">No hay usuarios que coincidan.</div>';
+    $('hfLista').querySelectorAll('.hf-item').forEach(el => el.onclick = () => abrirChat(el.dataset.uid));
+  }
+  $('hfBuscar').oninput = () => {
+    clearTimeout(hfBuscarT);
+    hfBuscarT = setTimeout(async () => {
+      const q = $('hfBuscar').value.trim();
+      hfBusqueda = q.length >= 2 ? q : '';
+      if (!hfBusqueda) { hfResultados = []; return pintarHandoffs(); }
+      $('hfListaTit').textContent = 'Buscando…';
+      try {
+        const j = await agente('conversaciones', { q: hfBusqueda, dias: 0 });
+        if (q !== $('hfBuscar').value.trim()) return;  // llegó tarde: ya se escribió otra cosa
+        hfResultados = j.conversaciones || []; pintarBusqueda(); avisar('hfError');
+      } catch (e) { avisar('hfError', e); }
+    }, 350);
+  };
 
   function abrirChat(uid) {
     chatUid = uid; chatDatos = null;

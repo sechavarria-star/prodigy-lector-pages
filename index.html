@@ -538,7 +538,8 @@ body.vista-simple header{max-width:640px;margin-left:auto;margin-right:auto}
         </div>
         <div class="hf-grid">
           <div class="card">
-            <div class="sec">Derivaciones</div>
+            <input id="hfBuscar" class="fc ancho" type="search" placeholder="Buscar usuario (nombre o número)" style="width:100%;margin-bottom:12px">
+            <div class="sec" id="hfListaTit">Derivaciones</div>
             <div id="hfLista"></div>
           </div>
           <div class="card" id="hfChatCard">
@@ -1758,6 +1759,6 @@ $('dlgOpinion').onclose = () => {   // vuelve a su lugar en el paso 4
 $('aSimple').onclick = () => verVista(false);
 $('bLimpiar').onclick = () => $('log').replaceChildren();
 </script>
-<script src="admin.js?v=20261125c"></script>
+<script src="admin.js?v=20261125d"></script>
 </body>
 </html>
